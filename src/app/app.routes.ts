@@ -1,0 +1,41 @@
+import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
+
+export const routes: Routes = [
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./features/auth/login.component').then(m => m.LoginComponent),
+  },
+  {
+    path: 'app',
+    loadComponent: () =>
+      import('./shared/layout/main-layout.component').then(m => m.MainLayoutComponent),
+    canActivate: [authGuard],
+    children: [
+      {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+      },
+      {
+        path: 'measurements',
+        loadComponent: () =>
+          import('./features/measurements/measurements.component').then(m => m.MeasurementsComponent),
+      },
+      {
+        path: 'towers',
+        loadComponent: () =>
+          import('./features/towers/towers.component').then(m => m.TowersComponent),
+      },
+      {
+        path: 'qr-management',
+        loadComponent: () =>
+          import('./features/qr-management/qr-management.component').then(m => m.QrManagementComponent),
+      },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+    ],
+  },
+  { path: '', redirectTo: '/login', pathMatch: 'full' },
+  { path: '**', redirectTo: '/login' },
+];
