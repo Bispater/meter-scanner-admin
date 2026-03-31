@@ -85,13 +85,17 @@ export class LoginComponent {
   hidePassword = signal(true);
   errorMessage = signal('');
 
-  onLogin(): void {
+  loading = signal(false);
+
+  async onLogin(): Promise<void> {
     this.errorMessage.set('');
     if (!this.username || !this.password) {
       this.errorMessage.set('Complete todos los campos.');
       return;
     }
-    const success = this.authService.login(this.username, this.password);
+    this.loading.set(true);
+    const success = await this.authService.login(this.username, this.password);
+    this.loading.set(false);
     if (success) {
       this.router.navigate(['/app/dashboard']);
     } else {

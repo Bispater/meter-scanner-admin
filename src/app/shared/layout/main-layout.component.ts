@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -7,6 +7,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { AuthService } from '../../core/services/auth.service';
+import { BuildingService } from '../../core/services/building.service';
+import { UserService } from '../../core/services/user.service';
+import { MeasurementService } from '../../core/services/measurement.service';
 
 @Component({
   selector: 'app-main-layout',
@@ -84,9 +87,18 @@ import { AuthService } from '../../core/services/auth.service';
     :host { display: block; height: 100%; }
   `],
 })
-export class MainLayoutComponent {
+export class MainLayoutComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly buildingService = inject(BuildingService);
+  private readonly userService = inject(UserService);
+  private readonly measurementService = inject(MeasurementService);
+
+  ngOnInit(): void {
+    this.buildingService.loadAll();
+    this.userService.loadAll();
+    this.measurementService.loadAll();
+  }
 
   readonly navItems = [
     { route: '/app/dashboard', icon: 'dashboard', label: 'Dashboard' },

@@ -1,68 +1,44 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Building, Tower, Apartment } from '../models/building.model';
+import { environment } from '../../../environments/environment';
+import { NotificationService } from './notification.service';
 
-const SEED_BUILDINGS: Building[] = [
-  {
-    id: 'bld-001',
-    name: 'Edificio Los Robles',
-    address: 'Av. Providencia 1234, Santiago',
-    towers: [
-      {
-        id: 'twr-001', name: 'Torre A',
-        apartments: [
-          { id: 'apt-001', number: '101', meterId: '621659-11', floor: 1 },
-          { id: 'apt-002', number: '102', meterId: '621660-12', floor: 1 },
-          { id: 'apt-003', number: '201', meterId: '621661-13', floor: 2 },
-          { id: 'apt-004', number: '202', meterId: '621662-14', floor: 2 },
-          { id: 'apt-005', number: '203', meterId: '785412-03', floor: 2 },
-          { id: 'apt-006', number: '301', meterId: '621663-15', floor: 3 },
-          { id: 'apt-007', number: '405', meterId: '369258-22', floor: 4 },
-        ],
-      },
-      {
-        id: 'twr-002', name: 'Torre B',
-        apartments: [
-          { id: 'apt-008', number: '201', meterId: '147852-19', floor: 2 },
-          { id: 'apt-009', number: '504', meterId: '24081375', floor: 5 },
-          { id: 'apt-010', number: '601', meterId: '258147-06', floor: 6 },
-        ],
-      },
-      {
-        id: 'twr-003', name: 'Torre C',
-        apartments: [
-          { id: 'apt-011', number: '102', meterId: '951753-14', floor: 1 },
-          { id: 'apt-012', number: '302', meterId: '963258-07', floor: 3 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'bld-002',
-    name: 'Condominio Parque Central',
-    address: 'Calle Las Flores 567, Ñuñoa',
-    towers: [
-      {
-        id: 'twr-004', name: 'Torre Norte',
-        apartments: [
-          { id: 'apt-013', number: '101', meterId: '550101-01', floor: 1 },
-          { id: 'apt-014', number: '201', meterId: '550201-02', floor: 2 },
-          { id: 'apt-015', number: '301', meterId: '550301-03', floor: 3 },
-        ],
-      },
-      {
-        id: 'twr-005', name: 'Torre Sur',
-        apartments: [
-          { id: 'apt-016', number: '101', meterId: '560101-01', floor: 1 },
-          { id: 'apt-017', number: '201', meterId: '560201-02', floor: 2 },
-        ],
-      },
-    ],
-  },
-];
+interface ApiApartment {
+  id: number;
+  number: string;
+  floor: number;
+  meter_id: string;
+  tower: number;
+}
+
+interface ApiTower {
+  id: number;
+  name: string;
+  building: number;
+  apartments: ApiApartment[];
+  apartment_count: number;
+}
+
+interface ApiBuilding {
+  id: number;
+  name: string;
+  address: string;
+  created_at: string;
+  towers: ApiTower[];
+  tower_count: number;
+  apartment_count: number;
+}
+
+interface ApiPage<T> { count: number; results: T[]; }
 
 @Injectable({ providedIn: 'root' })
 export class BuildingService {
-  private readonly _buildings = signal<Building[]>(SEED_BUILDINGS);
+  private readonly http = inject(HttpClient);
+  private readonly notify = inject(NotificationService);
+  private readonly url = `${environment.apiUrl}/buildings`;
+
+  private readonly _buildings = signal<Building[]>([]);
   readonly buildings = this._buildings.asReadonly();
 
   /** Flat list of all towers across all buildings */
@@ -85,85 +61,134 @@ export class BuildingService {
     ),
   );
 
+  // ── Load from API ──
+
+  loadAll(): void {
+    console.log('[BUILDINGS] GET', `${this.url}/buildings/?page_size=200`);
+    this.http.get<ApiPage<ApiBuilding>>(`${this.url}/buildings/?page_size=200`).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Loaded:', res.count, 'buildings', res.results);
+        this._buildings.set(res.results.map(b => this._mapBuilding(b)));
+      },
+      error: err => {
+        console.error('[BUILDINGS] Load error:', err);
+        this.notify.error('Error al cargar edificios');
+      },
+    });
+  }
+
   // ── CRUD Buildings ──
 
-  addBuilding(name: string, address: string): Building {
-    const b: Building = {
-      id: `bld-${Date.now()}`,
-      name,
-      address,
-      towers: [],
-    };
-    this._buildings.update(list => [...list, b]);
-    return b;
+  addBuilding(name: string, address: string): void {
+    const payload = { name, address };
+    console.log('[BUILDINGS] POST /buildings/', payload);
+    this.http.post(`${this.url}/buildings/`, payload).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Created:', res);
+        this.notify.success(`Edificio "${name}" creado`);
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Create error:', err);
+        this.notify.error('Error al crear edificio');
+      },
+    });
   }
 
   updateBuilding(id: string, patch: Partial<Pick<Building, 'name' | 'address'>>): void {
-    this._buildings.update(list =>
-      list.map(b => (b.id === id ? { ...b, ...patch } : b)),
-    );
+    console.log('[BUILDINGS] PATCH /buildings/' + id, patch);
+    this.http.patch(`${this.url}/buildings/${id}/`, patch).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Updated:', res);
+        this.notify.success('Edificio actualizado');
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Update error:', err);
+        this.notify.error('Error al actualizar edificio');
+      },
+    });
   }
 
   deleteBuilding(id: string): void {
-    this._buildings.update(list => list.filter(b => b.id !== id));
+    console.log('[BUILDINGS] DELETE /buildings/' + id);
+    this.http.delete(`${this.url}/buildings/${id}/`).subscribe({
+      next: () => {
+        console.log('[BUILDINGS] Deleted building', id);
+        this.notify.success('Edificio eliminado');
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Delete error:', err);
+        this.notify.error('Error al eliminar edificio');
+      },
+    });
   }
 
   // ── CRUD Towers ──
 
-  addTower(buildingId: string, name: string): Tower {
-    const t: Tower = { id: `twr-${Date.now()}`, name, apartments: [] };
-    this._buildings.update(list =>
-      list.map(b =>
-        b.id === buildingId ? { ...b, towers: [...b.towers, t] } : b,
-      ),
-    );
-    return t;
+  addTower(buildingId: string, name: string): void {
+    const payload = { name, building: Number(buildingId) };
+    console.log('[BUILDINGS] POST /towers/', payload);
+    this.http.post(`${this.url}/towers/`, payload).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Tower created:', res);
+        this.notify.success(`Torre "${name}" creada`);
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Tower create error:', err);
+        this.notify.error('Error al crear torre');
+      },
+    });
   }
 
-  deleteTower(buildingId: string, towerId: string): void {
-    this._buildings.update(list =>
-      list.map(b =>
-        b.id === buildingId
-          ? { ...b, towers: b.towers.filter(t => t.id !== towerId) }
-          : b,
-      ),
-    );
+  deleteTower(_buildingId: string, towerId: string): void {
+    console.log('[BUILDINGS] DELETE /towers/' + towerId);
+    this.http.delete(`${this.url}/towers/${towerId}/`).subscribe({
+      next: () => {
+        console.log('[BUILDINGS] Deleted tower', towerId);
+        this.notify.success('Torre eliminada');
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Tower delete error:', err);
+        this.notify.error('Error al eliminar torre');
+      },
+    });
   }
 
   // ── CRUD Apartments ──
 
-  addApartment(buildingId: string, towerId: string, apt: Omit<Apartment, 'id'>): Apartment {
-    const a: Apartment = { ...apt, id: `apt-${Date.now()}` };
-    this._buildings.update(list =>
-      list.map(b =>
-        b.id === buildingId
-          ? {
-              ...b,
-              towers: b.towers.map(t =>
-                t.id === towerId ? { ...t, apartments: [...t.apartments, a] } : t,
-              ),
-            }
-          : b,
-      ),
-    );
-    return a;
+  addApartment(_buildingId: string, towerId: string, apt: Omit<Apartment, 'id'>): void {
+    const payload = { number: apt.number, floor: apt.floor, meter_id: apt.meterId, tower: Number(towerId) };
+    console.log('[BUILDINGS] POST /apartments/', payload);
+    this.http.post(`${this.url}/apartments/`, payload).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Apartment created:', res);
+        this.notify.success(`Depto "${apt.number}" creado`);
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Apartment create error:', err);
+        this.notify.error('Error al crear departamento');
+      },
+    });
   }
 
-  deleteApartment(buildingId: string, towerId: string, aptId: string): void {
-    this._buildings.update(list =>
-      list.map(b =>
-        b.id === buildingId
-          ? {
-              ...b,
-              towers: b.towers.map(t =>
-                t.id === towerId
-                  ? { ...t, apartments: t.apartments.filter(a => a.id !== aptId) }
-                  : t,
-              ),
-            }
-          : b,
-      ),
-    );
+  deleteApartment(_buildingId: string, _towerId: string, aptId: string): void {
+    console.log('[BUILDINGS] DELETE /apartments/' + aptId);
+    this.http.delete(`${this.url}/apartments/${aptId}/`).subscribe({
+      next: () => {
+        console.log('[BUILDINGS] Deleted apartment', aptId);
+        this.notify.success('Departamento eliminado');
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Apartment delete error:', err);
+        this.notify.error('Error al eliminar departamento');
+      },
+    });
   }
 
   // ── Lookups ──
@@ -174,5 +199,33 @@ export class BuildingService {
 
   getApartmentById(aptId: string): (Apartment & { towerName: string; buildingName: string }) | undefined {
     return this.allApartments().find(a => a.id === aptId);
+  }
+
+  // ── Mappers (API → Frontend) ──
+
+  private _mapBuilding(b: ApiBuilding): Building {
+    return {
+      id: String(b.id),
+      name: b.name,
+      address: b.address,
+      towers: (b.towers || []).map(t => this._mapTower(t)),
+    };
+  }
+
+  private _mapTower(t: ApiTower): Tower {
+    return {
+      id: String(t.id),
+      name: t.name,
+      apartments: (t.apartments || []).map(a => this._mapApartment(a)),
+    };
+  }
+
+  private _mapApartment(a: ApiApartment): Apartment {
+    return {
+      id: String(a.id),
+      number: a.number,
+      floor: a.floor,
+      meterId: a.meter_id,
+    };
   }
 }

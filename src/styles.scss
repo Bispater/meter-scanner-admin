@@ -89,3 +89,29 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
   --mdc-dialog-subhead-color: #f1f5f9;
   --mdc-dialog-supporting-text-color: #cbd5e1;
 }
+
+/* ── Snackbar styles ── */
+.snack-success .mdc-snackbar__surface {
+  background: #065f46 !important;
+  color: #d1fae5 !important;
+  border: 1px solid #10b981 !important;
+}
+.snack-success .mat-mdc-snack-bar-action {
+  color: #6ee7b7 !important;
+}
+.snack-error .mdc-snackbar__surface {
+  background: #7f1d1d !important;
+  color: #fecaca !important;
+  border: 1px solid #ef4444 !important;
+}
+.snack-error .mat-mdc-snack-bar-action {
+  color: #fca5a5 !important;
+}
+.snack-info .mdc-snackbar__surface {
+  background: #1e3a5f !important;
+  color: #bfdbfe !important;
+  border: 1px solid #3b82f6 !important;
+}
+.snack-info .mat-mdc-snack-bar-action {
+  color: #93c5fd !important;
+}

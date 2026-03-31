@@ -254,7 +254,10 @@ export class UserFormDialogComponent {
   };
 
   isValid(): boolean {
-    return !!(this.form.displayName && this.form.username && this.form.password && this.form.role);
+    if (this.data.mode === 'create') {
+      return !!(this.form.displayName && this.form.username && this.form.password && this.form.role);
+    }
+    return !!(this.form.displayName && this.form.username && this.form.role);
   }
 
   buildResult() {

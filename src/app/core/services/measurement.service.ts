@@ -1,132 +1,39 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Measurement, Summary, MeasurementsResponse } from '../models/measurement.model';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Measurement, Summary } from '../models/measurement.model';
+import { environment } from '../../../environments/environment';
+import { NotificationService } from './notification.service';
 
-const MOCK_DATA: MeasurementsResponse = {
-  measurements: [
-    {
-      id: 'uuid-001',
-      meter_id: '621659-11',
-      tower: 'Torre A',
-      apartment: '101',
-      reading_value: 154.5,
-      unit: 'm3',
-      captured_at: '2026-03-26T14:30:00Z',
-      operator_id: 'user_05',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'verified',
-      meter_type: 'analog',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-    {
-      id: 'uuid-002',
-      meter_id: '24081375',
-      tower: 'Torre B',
-      apartment: '504',
-      reading_value: 890.12,
-      unit: 'm3',
-      captured_at: '2026-03-26T15:10:00Z',
-      operator_id: 'user_05',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'pending_review',
-      meter_type: 'digital_drum',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-    {
-      id: 'uuid-003',
-      meter_id: '785412-03',
-      tower: 'Torre A',
-      apartment: '203',
-      reading_value: 312.8,
-      unit: 'm3',
-      captured_at: '2026-03-26T09:45:00Z',
-      operator_id: 'user_02',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'verified',
-      meter_type: 'analog',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-    {
-      id: 'uuid-004',
-      meter_id: '963258-07',
-      tower: 'Torre C',
-      apartment: '302',
-      reading_value: 45.3,
-      unit: 'm3',
-      captured_at: '2026-03-26T11:20:00Z',
-      operator_id: 'user_03',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'pending_review',
-      meter_type: 'digital',
-      location_coords: { lat: -33.42, lng: -70.59 },
-    },
-    {
-      id: 'uuid-005',
-      meter_id: '147852-19',
-      tower: 'Torre B',
-      apartment: '201',
-      reading_value: 678.9,
-      unit: 'm3',
-      captured_at: '2026-03-25T16:00:00Z',
-      operator_id: 'user_05',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'verified',
-      meter_type: 'analog',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-    {
-      id: 'uuid-006',
-      meter_id: '369258-22',
-      tower: 'Torre A',
-      apartment: '405',
-      reading_value: 1023.4,
-      unit: 'm3',
-      captured_at: '2026-03-25T10:15:00Z',
-      operator_id: 'user_01',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'rejected',
-      meter_type: 'digital_drum',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-    {
-      id: 'uuid-007',
-      meter_id: '951753-14',
-      tower: 'Torre C',
-      apartment: '102',
-      reading_value: 89.7,
-      unit: 'm3',
-      captured_at: '2026-03-26T08:30:00Z',
-      operator_id: 'user_04',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'verified',
-      meter_type: 'analog',
-      location_coords: { lat: -33.42, lng: -70.59 },
-    },
-    {
-      id: 'uuid-008',
-      meter_id: '258147-06',
-      tower: 'Torre B',
-      apartment: '601',
-      reading_value: 456.2,
-      unit: 'm3',
-      captured_at: '2026-03-26T13:00:00Z',
-      operator_id: 'user_02',
-      photo_url: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400',
-      status: 'pending_review',
-      meter_type: 'digital',
-      location_coords: { lat: -33.41, lng: -70.58 },
-    },
-  ],
-  summary: {
-    total_readings_today: 45,
-    pending_alerts: 3,
-    total_consumption_m3: 3650.92,
-  },
-};
+interface ApiMeasurement {
+  id: number;
+  apartment: number;
+  operator: number | null;
+  reading_value: string;
+  unit: string;
+  photo: string | null;
+  status: string;
+  meter_type: string;
+  latitude: string | null;
+  longitude: string | null;
+  captured_at: string;
+  created_at: string;
+  tower_name: string;
+  building_name: string;
+  apartment_number: string;
+  meter_id: string;
+  operator_name: string | null;
+}
+
+interface ApiPage<T> { count: number; results: T[]; }
 
 @Injectable({ providedIn: 'root' })
 export class MeasurementService {
-  private readonly _measurements = signal<Measurement[]>(MOCK_DATA.measurements);
-  private readonly _summary = signal<Summary>(MOCK_DATA.summary);
+  private readonly http = inject(HttpClient);
+  private readonly notify = inject(NotificationService);
+  private readonly url = `${environment.apiUrl}/measurements`;
+
+  private readonly _measurements = signal<Measurement[]>([]);
+  private readonly _summary = signal<Summary>({ total_readings_today: 0, pending_alerts: 0, total_consumption_m3: 0 });
 
   readonly measurements = this._measurements.asReadonly();
   readonly summary = this._summary.asReadonly();
@@ -135,6 +42,25 @@ export class MeasurementService {
     const all = this._measurements();
     return [...new Set(all.map(m => m.tower))].sort();
   });
+
+  // ── Load from API ──
+
+  loadAll(): void {
+    const endpoint = `${this.url}/?page_size=500&ordering=-captured_at`;
+    console.log('[MEASUREMENTS] GET', endpoint);
+    this.http.get<ApiPage<ApiMeasurement>>(endpoint).subscribe({
+      next: res => {
+        console.log('[MEASUREMENTS] Loaded:', res.count, 'measurements', res.results);
+        const mapped = res.results.map(m => this._mapMeasurement(m));
+        this._measurements.set(mapped);
+        this._computeSummary(mapped);
+      },
+      error: err => {
+        console.error('[MEASUREMENTS] Load error:', err);
+        this.notify.error('Error al cargar mediciones');
+      },
+    });
+  }
 
   getFilteredMeasurements(filters: {
     tower?: string;
@@ -173,5 +99,40 @@ export class MeasurementService {
 
   getMeasurementById(id: string): Measurement | undefined {
     return this._measurements().find(m => m.id === id);
+  }
+
+  // ── Mapper (API → Frontend) ──
+
+  private _mapMeasurement(m: ApiMeasurement): Measurement {
+    return {
+      id: String(m.id),
+      meter_id: m.meter_id,
+      tower: m.tower_name,
+      apartment: m.apartment_number,
+      reading_value: parseFloat(m.reading_value),
+      unit: m.unit || 'm3',
+      captured_at: m.captured_at,
+      operator_id: m.operator ? String(m.operator) : '',
+      photo_url: m.photo || '',
+      status: m.status as Measurement['status'],
+      meter_type: m.meter_type as Measurement['meter_type'],
+      location_coords: {
+        lat: m.latitude ? parseFloat(m.latitude) : 0,
+        lng: m.longitude ? parseFloat(m.longitude) : 0,
+      },
+    };
+  }
+
+  private _computeSummary(measurements: Measurement[]): void {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayMeasurements = measurements.filter(m => m.captured_at.slice(0, 10) === today);
+    const pending = measurements.filter(m => m.status === 'pending_review').length;
+    const total = measurements.reduce((sum, m) => sum + m.reading_value, 0);
+
+    this._summary.set({
+      total_readings_today: todayMeasurements.length,
+      pending_alerts: pending,
+      total_consumption_m3: Math.round(total * 100) / 100,
+    });
   }
 }

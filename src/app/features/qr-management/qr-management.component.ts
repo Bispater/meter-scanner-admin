@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, computed, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { QrService } from '../../core/services/qr.service';
+import { BuildingService } from '../../core/services/building.service';
 
 @Component({
   selector: 'app-qr-management',
@@ -154,7 +155,7 @@ export class QrPreviewDialogComponent {
       <mat-form-field appearance="outline" class="w-full">
         <mat-label>Torre</mat-label>
         <mat-select [(ngModel)]="tower">
-          @for (t of towers; track t) {
+          @for (t of towers(); track t) {
             <mat-option [value]="t">{{ t }}</mat-option>
           }
         </mat-select>
@@ -182,7 +183,8 @@ export class QrPreviewDialogComponent {
   `],
 })
 export class QrCreateDialogComponent {
-  readonly towers = inject(QrService).towers;
+  private readonly buildingService = inject(BuildingService);
+  readonly towers = computed(() => this.buildingService.allTowers().map(t => t.name));
   tower = '';
   apartment = '';
 }
