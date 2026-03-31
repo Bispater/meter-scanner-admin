@@ -1,6 +1,9 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { AppUser } from '../models/user.model';
+import { UserService } from './user.service';
 
-export interface User {
+export interface SessionUser {
+  id: string;
   username: string;
   displayName: string;
   role: string;
@@ -8,19 +11,23 @@ export interface User {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly _user = signal<User | null>(this._loadUser());
+  private readonly userService = inject(UserService);
+  private readonly _user = signal<SessionUser | null>(this._loadUser());
   readonly user = this._user.asReadonly();
   readonly isAuthenticated = computed(() => this._user() !== null);
+  readonly isAdmin = computed(() => this._user()?.role === 'admin');
 
   login(username: string, password: string): boolean {
-    if (username === 'admin' && password === 'admin') {
-      const user: User = {
-        username: 'admin',
-        displayName: 'Administrador',
-        role: 'admin',
+    const appUser = this.userService.authenticate(username, password);
+    if (appUser) {
+      const session: SessionUser = {
+        id: appUser.id,
+        username: appUser.username,
+        displayName: appUser.displayName,
+        role: appUser.role,
       };
-      this._user.set(user);
-      sessionStorage.setItem('hydroscan_user', JSON.stringify(user));
+      this._user.set(session);
+      sessionStorage.setItem('hydroscan_user', JSON.stringify(session));
       return true;
     }
     return false;
@@ -31,7 +38,7 @@ export class AuthService {
     sessionStorage.removeItem('hydroscan_user');
   }
 
-  private _loadUser(): User | null {
+  private _loadUser(): SessionUser | null {
     const stored = sessionStorage.getItem('hydroscan_user');
     if (stored) {
       try {

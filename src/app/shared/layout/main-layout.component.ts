@@ -59,12 +59,10 @@ import { AuthService } from '../../core/services/auth.service';
         <header class="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 shrink-0">
           <h1 class="text-base font-semibold text-slate-200">Panel de Administración</h1>
           <div class="flex items-center gap-3">
-            <div class="flex items-center gap-2 bg-slate-700/50 rounded-full pl-3 pr-1 py-1">
+            <div class="flex items-center gap-2 bg-slate-700/50 rounded-full px-3 py-1.5 cursor-pointer" [matMenuTriggerFor]="userMenu">
               <mat-icon style="font-size:18px;width:18px;height:18px;" class="text-cyan-400">admin_panel_settings</mat-icon>
               <span class="text-sm text-slate-300">{{ authService.user()?.displayName }}</span>
-              <button mat-icon-button [matMenuTriggerFor]="userMenu" class="!w-8 !h-8">
-                <mat-icon style="font-size:18px;width:18px;height:18px;">expand_more</mat-icon>
-              </button>
+              <mat-icon style="font-size:18px;width:18px;height:18px;" class="text-slate-400">expand_more</mat-icon>
             </div>
             <mat-menu #userMenu="matMenu">
               <button mat-menu-item (click)="onLogout()">
@@ -92,8 +90,9 @@ export class MainLayoutComponent {
 
   readonly navItems = [
     { route: '/app/dashboard', icon: 'dashboard', label: 'Dashboard' },
+    { route: '/app/buildings', icon: 'domain', label: 'Edificios' },
+    { route: '/app/users', icon: 'people', label: 'Usuarios' },
     { route: '/app/measurements', icon: 'speed', label: 'Mediciones' },
-    { route: '/app/towers', icon: 'apartment', label: 'Torres / Dptos' },
     { route: '/app/qr-management', icon: 'qr_code_2', label: 'Gestión de QRs' },
   ];
 

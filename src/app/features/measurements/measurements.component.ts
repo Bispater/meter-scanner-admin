@@ -205,7 +205,6 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
   styles: [`
     :host { display: block; }
     ::ng-deep .dense-field .mat-mdc-form-field-infix { padding-top: 8px !important; padding-bottom: 8px !important; min-height: 40px !important; }
-    ::ng-deep .dense-field .mat-mdc-text-field-wrapper { --mdc-outlined-text-field-outline-color: #334155; }
     ::ng-deep .mat-mdc-header-cell { white-space: nowrap; }
     ::ng-deep .mat-sort-header-arrow { color: #94a3b8 !important; }
     ::ng-deep .mat-mdc-paginator { border-radius: 0 0 12px 12px; }

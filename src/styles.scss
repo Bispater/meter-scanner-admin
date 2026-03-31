@@ -26,6 +26,64 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
 ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
+/* ── Global dark-theme mat-form-field fixes ── */
+
+/* 1. Set outline color for all outlined fields */
+.mat-mdc-text-field-wrapper.mdc-text-field--outlined {
+  --mdc-outlined-text-field-outline-color: #475569;
+  --mdc-outlined-text-field-hover-outline-color: #64748b;
+  --mdc-outlined-text-field-focus-outline-color: #22d3ee;
+}
+
+/* 2. Kill the vertical separator line that MDC adds between
+      prefix/suffix and the input area via a trailing border on
+      the leading notch segment and a leading border on the trailing
+      segment. The "notched-outline" is a 3-part border (leading |
+      notch | trailing). We make them all seamless single-border. */
+.mdc-text-field--outlined .mdc-notched-outline__leading {
+  border-right: none !important;
+}
+.mdc-text-field--outlined .mdc-notched-outline__trailing {
+  border-left: none !important;
+}
+.mdc-text-field--outlined .mdc-notched-outline__notch {
+  border-left: none !important;
+  border-right: none !important;
+}
+
+/* 3. Remove any pseudo-element separators on prefix/suffix */
+.mat-mdc-form-field-icon-prefix,
+.mat-mdc-form-field-icon-suffix,
+.mat-mdc-form-field-text-prefix,
+.mat-mdc-form-field-text-suffix {
+  border: none !important;
+}
+.mat-mdc-form-field-icon-prefix::after,
+.mat-mdc-form-field-icon-suffix::before,
+.mat-mdc-form-field-text-prefix::after,
+.mat-mdc-form-field-text-suffix::before {
+  display: none !important;
+}
+.mat-mdc-form-field-icon-prefix > .mat-icon {
+  padding: 0 6px 0 0 !important;
+}
+
+/* 4. Consistent text / label colors for dark theme */
+.mat-mdc-form-field {
+  --mdc-outlined-text-field-label-text-color: #94a3b8;
+  --mdc-outlined-text-field-input-text-color: #e2e8f0;
+  --mdc-outlined-text-field-input-text-placeholder-color: #64748b;
+  --mdc-outlined-text-field-caret-color: #22d3ee;
+  --mdc-outlined-text-field-focus-label-text-color: #22d3ee;
+}
+
+/* 5. Mat-select dark text */
+.mat-mdc-select {
+  --mat-select-trigger-text-color: #e2e8f0;
+  --mat-select-placeholder-text-color: #64748b;
+  --mat-select-enabled-arrow-color: #94a3b8;
+}
+
 .dark-dialog .mat-mdc-dialog-container {
   --mdc-dialog-container-color: #1e293b;
   --mdc-dialog-subhead-color: #f1f5f9;

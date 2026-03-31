@@ -24,9 +24,14 @@ export const routes: Routes = [
           import('./features/measurements/measurements.component').then(m => m.MeasurementsComponent),
       },
       {
-        path: 'towers',
+        path: 'buildings',
         loadComponent: () =>
-          import('./features/towers/towers.component').then(m => m.TowersComponent),
+          import('./features/buildings/buildings.component').then(m => m.BuildingsComponent),
+      },
+      {
+        path: 'users',
+        loadComponent: () =>
+          import('./features/users/users.component').then(m => m.UsersComponent),
       },
       {
         path: 'qr-management',

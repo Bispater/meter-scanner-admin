@@ -74,7 +74,6 @@ import { AuthService } from '../../core/services/auth.service';
   `,
   styles: [`
     :host { display: block; }
-    ::ng-deep .mat-mdc-form-field { --mdc-outlined-text-field-outline-color: #475569; }
   `],
 })
 export class LoginComponent {
