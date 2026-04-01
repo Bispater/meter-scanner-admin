@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { Measurement } from '../../core/models/measurement.model';
+import { MeasurementService } from '../../core/services/measurement.service';
 
 @Component({
   selector: 'app-measurement-detail-dialog',
@@ -81,18 +82,23 @@ import { Measurement } from '../../core/models/measurement.model';
       </div>
 
       <!-- Actions -->
-      <div class="flex justify-end gap-3 px-6 py-4 border-t border-slate-700">
-        @if (data.status === 'pending_review') {
-          <button mat-flat-button class="!bg-emerald-600 !text-white">
-            <mat-icon>check</mat-icon> Validar
-          </button>
-          <button mat-flat-button class="!bg-red-600 !text-white">
-            <mat-icon>close</mat-icon> Rechazar
-          </button>
-        }
-        <button mat-stroked-button (click)="dialogRef.close()" class="!border-slate-600 !text-slate-300">
-          Cerrar
+      <div class="flex justify-between px-6 py-4 border-t border-slate-700">
+        <button mat-flat-button class="!bg-red-600/80 !text-white" (click)="onDelete()">
+          <mat-icon>delete</mat-icon> Eliminar
         </button>
+        <div class="flex gap-3">
+          @if (data.status === 'pending_review') {
+            <button mat-flat-button class="!bg-emerald-600 !text-white">
+              <mat-icon>check</mat-icon> Validar
+            </button>
+            <button mat-flat-button class="!bg-red-600 !text-white">
+              <mat-icon>close</mat-icon> Rechazar
+            </button>
+          }
+          <button mat-stroked-button (click)="dialogRef.close()" class="!border-slate-600 !text-slate-300">
+            Cerrar
+          </button>
+        </div>
       </div>
     </div>
   `,
@@ -103,6 +109,7 @@ import { Measurement } from '../../core/models/measurement.model';
 export class MeasurementDetailDialogComponent {
   readonly dialogRef = inject(MatDialogRef<MeasurementDetailDialogComponent>);
   readonly data: Measurement = inject(MAT_DIALOG_DATA);
+  private readonly measurementService = inject(MeasurementService);
 
   get statusLabel(): string {
     const map: Record<string, string> = {
@@ -122,7 +129,21 @@ export class MeasurementDetailDialogComponent {
     return map[this.data.meter_type] || this.data.meter_type;
   }
 
+  onDelete(): void {
+    if (confirm(`¿Eliminar medición #${this.data.id} del medidor ${this.data.meter_id}?`)) {
+      this.measurementService.deleteMeasurement(this.data.id);
+      this.dialogRef.close('deleted');
+    }
+  }
+
   onImageError(event: Event): void {
-    (event.target as HTMLImageElement).src = 'https://via.placeholder.com/400x250/1e293b/64748b?text=Sin+Foto';
+    const img = event.target as HTMLImageElement;
+    img.style.display = 'none';
+    img.parentElement!.innerHTML = `
+      <div class="flex flex-col items-center justify-center h-full text-slate-500">
+        <span class="material-icons" style="font-size:48px">hide_image</span>
+        <span class="text-sm mt-2">Sin foto</span>
+      </div>
+    `;
   }
 }

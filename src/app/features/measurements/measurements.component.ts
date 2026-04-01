@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
@@ -13,6 +13,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { Measurement } from '../../core/models/measurement.model';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.component';
 
 @Component({
@@ -30,13 +31,19 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
     MatButtonModule,
     MatIconModule,
     MatChipsModule,
+    MatTooltipModule,
   ],
   template: `
     <div class="space-y-5">
       <!-- Header -->
-      <div>
-        <h2 class="text-2xl font-bold text-white">Mediciones</h2>
-        <p class="text-slate-400 text-sm mt-1">Historial completo de lecturas de medidores</p>
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-bold text-white">Mediciones</h2>
+          <p class="text-slate-400 text-sm mt-1">Historial completo de lecturas de medidores</p>
+        </div>
+        <button mat-flat-button class="!bg-cyan-600 !text-white" (click)="refresh()" matTooltip="Actualizar datos">
+          <mat-icon>refresh</mat-icon> Actualizar
+        </button>
       </div>
 
       <!-- Filters -->
@@ -172,8 +179,11 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700"></th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !border-b-slate-700/50">
-                <button mat-icon-button class="!text-slate-400 hover:!text-cyan-400" (click)="openDetail(row)">
+                <button mat-icon-button class="!text-slate-400 hover:!text-cyan-400" (click)="openDetail(row)" matTooltip="Ver detalle">
                   <mat-icon style="font-size:18px;width:18px;height:18px;">visibility</mat-icon>
+                </button>
+                <button mat-icon-button class="!text-slate-400 hover:!text-red-400" (click)="deleteMeasurement($event, row)" matTooltip="Eliminar">
+                  <mat-icon style="font-size:18px;width:18px;height:18px;">delete</mat-icon>
                 </button>
               </td>
             </ng-container>
@@ -210,9 +220,10 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
     ::ng-deep .mat-mdc-paginator { border-radius: 0 0 12px 12px; }
   `],
 })
-export class MeasurementsComponent {
+export class MeasurementsComponent implements OnInit, OnDestroy {
   private readonly measurementService = inject(MeasurementService);
   private readonly dialog = inject(MatDialog);
+  private refreshInterval: ReturnType<typeof setInterval> | null = null;
 
   readonly towers = this.measurementService.towers;
 
@@ -224,9 +235,27 @@ export class MeasurementsComponent {
 
   readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'status', 'actions'];
 
-  readonly filteredData = signal<Measurement[]>(this.measurementService.measurements());
+  readonly filteredData = signal<Measurement[]>([]);
   readonly pageSize = signal(10);
   readonly pageIndex = signal(0);
+
+  ngOnInit(): void {
+    this.measurementService.onLoaded(() => this.applyFilters());
+    // If data already loaded, apply filters now
+    if (this.measurementService.measurements().length > 0) {
+      this.applyFilters();
+    }
+    // Auto-refresh every 30 seconds
+    this.refreshInterval = setInterval(() => this.refresh(), 30000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshInterval) clearInterval(this.refreshInterval);
+  }
+
+  refresh(): void {
+    this.measurementService.loadAll();
+  }
 
   readonly paginatedData = computed(() => {
     const start = this.pageIndex() * this.pageSize();
@@ -279,15 +308,31 @@ export class MeasurementsComponent {
   }
 
   openDetail(measurement: Measurement): void {
-    this.dialog.open(MeasurementDetailDialogComponent, {
+    const ref = this.dialog.open(MeasurementDetailDialogComponent, {
       data: measurement,
       panelClass: 'custom-dialog',
       maxWidth: '600px',
       width: '95vw',
     });
+    ref.afterClosed().subscribe(result => {
+      if (result === 'deleted') {
+        setTimeout(() => this.applyFilters(), 300);
+      }
+    });
+  }
+
+  deleteMeasurement(event: Event, measurement: Measurement): void {
+    event.stopPropagation();
+    if (confirm(`¿Eliminar medición #${measurement.id} del medidor ${measurement.meter_id}?`)) {
+      this.measurementService.deleteMeasurement(measurement.id);
+      // Update local filtered data after a short delay
+      setTimeout(() => this.applyFilters(), 300);
+    }
   }
 
   onImageError(event: Event): void {
-    (event.target as HTMLImageElement).src = 'https://via.placeholder.com/80x80/1e293b/64748b?text=N/A';
+    const img = event.target as HTMLImageElement;
+    img.style.display = 'none';
+    img.parentElement!.innerHTML = '<span class="text-slate-500 text-xs">N/A</span>';
   }
 }

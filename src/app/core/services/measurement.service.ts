@@ -11,6 +11,7 @@ interface ApiMeasurement {
   reading_value: string;
   unit: string;
   photo: string | null;
+  photo_url: string | null;
   status: string;
   meter_type: string;
   latitude: string | null;
@@ -43,6 +44,12 @@ export class MeasurementService {
     return [...new Set(all.map(m => m.tower))].sort();
   });
 
+  private _onLoadedCallbacks: (() => void)[] = [];
+
+  onLoaded(cb: () => void): void {
+    this._onLoadedCallbacks.push(cb);
+  }
+
   // ── Load from API ──
 
   loadAll(): void {
@@ -54,6 +61,7 @@ export class MeasurementService {
         const mapped = res.results.map(m => this._mapMeasurement(m));
         this._measurements.set(mapped);
         this._computeSummary(mapped);
+        this._onLoadedCallbacks.forEach(cb => cb());
       },
       error: err => {
         console.error('[MEASUREMENTS] Load error:', err);
@@ -101,6 +109,22 @@ export class MeasurementService {
     return this._measurements().find(m => m.id === id);
   }
 
+  deleteMeasurement(id: string): void {
+    const endpoint = `${this.url}/${id}/`;
+    this.http.delete(endpoint).subscribe({
+      next: () => {
+        const updated = this._measurements().filter(m => m.id !== id);
+        this._measurements.set(updated);
+        this._computeSummary(updated);
+        this.notify.success('Medición eliminada');
+      },
+      error: err => {
+        console.error('[MEASUREMENTS] Delete error:', err);
+        this.notify.error('Error al eliminar medición');
+      },
+    });
+  }
+
   // ── Mapper (API → Frontend) ──
 
   private _mapMeasurement(m: ApiMeasurement): Measurement {
@@ -113,7 +137,7 @@ export class MeasurementService {
       unit: m.unit || 'm3',
       captured_at: m.captured_at,
       operator_id: m.operator ? String(m.operator) : '',
-      photo_url: m.photo || '',
+      photo_url: m.photo_url || m.photo || '',
       status: m.status as Measurement['status'],
       meter_type: m.meter_type as Measurement['meter_type'],
       location_coords: {
