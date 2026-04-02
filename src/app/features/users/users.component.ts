@@ -8,9 +8,12 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { HttpClient } from '@angular/common/http';
 import { UserService } from '../../core/services/user.service';
 import { BuildingService } from '../../core/services/building.service';
 import { AppUser, UserRole } from '../../core/models/user.model';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-users',
@@ -129,6 +132,7 @@ export class UsersComponent {
   readonly userService = inject(UserService);
   private readonly buildingService = inject(BuildingService);
   private readonly dialog = inject(MatDialog);
+  private readonly http = inject(HttpClient);
 
   countAdmins(): number {
     return this.userService.users().filter(u => u.role === 'admin').length;
@@ -170,15 +174,32 @@ export class UsersComponent {
   }
 
   openAssignDialog(user: AppUser): void {
-    const ref = this.dialog.open(AssignApartmentsDialogComponent, {
-      width: '600px',
-      panelClass: 'dark-dialog',
-      data: { user },
-    });
-    ref.afterClosed().subscribe(result => {
-      if (result !== undefined) {
-        this.userService.assignApartments(user.id, result);
-      }
+    const http = this.http;
+    const url = `${environment.apiUrl}/accounts/users/${user.id}/protected-apartments/`;
+    http.get<{ protected_apartment_ids: number[] }>(url).subscribe({
+      next: res => {
+        const protectedIds = (res.protected_apartment_ids || []).map(String);
+        const ref = this.dialog.open(AssignApartmentsDialogComponent, {
+          width: '640px',
+          panelClass: 'dark-dialog',
+          data: { user, protectedIds },
+        });
+        ref.afterClosed().subscribe(result => {
+          if (result !== undefined) {
+            this.userService.assignApartments(user.id, result);
+          }
+        });
+      },
+      error: () => {
+        const ref = this.dialog.open(AssignApartmentsDialogComponent, {
+          width: '640px',
+          panelClass: 'dark-dialog',
+          data: { user, protectedIds: [] },
+        });
+        ref.afterClosed().subscribe(result => {
+          if (result !== undefined) this.userService.assignApartments(user.id, result);
+        });
+      },
     });
   }
 }
@@ -275,7 +296,7 @@ export class UserFormDialogComponent {
   standalone: true,
   imports: [
     FormsModule, MatDialogModule, MatButtonModule, MatIconModule,
-    MatChipsModule, MatSelectModule, MatFormFieldModule,
+    MatChipsModule, MatSelectModule, MatFormFieldModule, MatTooltipModule,
   ],
   template: `
     <h2 mat-dialog-title class="!text-white">
@@ -284,29 +305,54 @@ export class UserFormDialogComponent {
     <mat-dialog-content class="!pt-2">
       <div class="flex gap-2 mb-4">
         <button mat-stroked-button class="!border-cyan-500 !text-cyan-400 text-xs" (click)="selectAll()">
-          Seleccionar Todos
+          <mat-icon style="font-size:14px;width:14px;height:14px;">select_all</mat-icon> Todos
         </button>
         <button mat-stroked-button class="!border-slate-600 !text-slate-400 text-xs" (click)="clearAll()">
-          Limpiar
+          <mat-icon style="font-size:14px;width:14px;height:14px;">deselect</mat-icon> Limpiar
         </button>
       </div>
 
-      <div class="max-h-96 overflow-y-auto space-y-4">
+      @if (protectedIds.length > 0) {
+        <div class="mb-3 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
+          <mat-icon class="text-amber-400 shrink-0" style="font-size:16px;width:16px;height:16px;margin-top:1px">lock</mat-icon>
+          <p class="text-xs text-amber-300">
+            Los departamentos con <mat-icon style="font-size:12px;width:12px;height:12px;vertical-align:middle" class="text-amber-400">lock</mat-icon>
+            tienen mediciones verificadas y no pueden ser removidos.
+          </p>
+        </div>
+      }
+
+      <div class="max-h-[420px] overflow-y-auto space-y-4 pr-1">
         @for (building of buildings(); track building.id) {
           <div class="border border-slate-700 rounded-lg p-3">
-            <p class="text-sm font-bold text-white mb-2">
-              <mat-icon style="font-size:16px;width:16px;height:16px;" class="text-cyan-400 align-text-bottom">domain</mat-icon>
+            <p class="text-sm font-bold text-white mb-2 flex items-center gap-1.5">
+              <mat-icon style="font-size:16px;width:16px;height:16px;" class="text-cyan-400">domain</mat-icon>
               {{ building.name }}
             </p>
             @for (tower of building.towers; track tower.id) {
-              <div class="ml-4 mb-2">
-                <p class="text-xs text-slate-400 font-semibold mb-1">{{ tower.name }}</p>
+              <div class="ml-4 mb-3">
+                <div class="flex items-center gap-2 mb-1.5">
+                  <span class="text-xs text-slate-300 font-semibold">{{ tower.name }}</span>
+                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-400 hover:border-cyan-500 hover:text-cyan-400 transition-colors"
+                          (click)="selectTower(tower)">
+                    Torre completa
+                  </button>
+                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-500 hover:border-slate-500 transition-colors"
+                          (click)="deselectTower(tower)">
+                    Quitar
+                  </button>
+                </div>
                 <div class="flex flex-wrap gap-1.5 ml-2">
                   @for (apt of tower.apartments; track apt.id) {
-                    <button class="text-xs px-2 py-1 rounded border transition-colors cursor-pointer"
-                            [class]="isSelected(apt.id) ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500'"
+                    <button class="text-xs px-2 py-1 rounded border transition-colors relative"
+                            [class]="btnClass(apt.id)"
+                            [disabled]="isProtected(apt.id)"
+                            [matTooltip]="isProtected(apt.id) ? 'Tiene medición verificada — no se puede remover' : ''"
                             (click)="toggle(apt.id)">
                       {{ apt.number }}
+                      @if (isProtected(apt.id)) {
+                        <mat-icon class="text-amber-400 !w-3 !h-3 absolute -top-1 -right-1" style="font-size:10px">lock</mat-icon>
+                      }
                     </button>
                   }
                 </div>
@@ -316,7 +362,12 @@ export class UserFormDialogComponent {
         }
       </div>
 
-      <p class="text-xs text-slate-500 mt-3">{{ selectedIds.length }} departamentos seleccionados</p>
+      <p class="text-xs text-slate-500 mt-3">
+        {{ selectedIds.length }} departamentos seleccionados
+        @if (protectedIds.length > 0) {
+          · <span class="text-amber-400">{{ protectedIds.length }} protegidos</span>
+        }
+      </p>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
@@ -328,17 +379,24 @@ export class UserFormDialogComponent {
   `,
 })
 export class AssignApartmentsDialogComponent {
-  readonly data = inject<{ user: AppUser }>(MAT_DIALOG_DATA);
+  readonly data = inject<{ user: AppUser; protectedIds?: string[] }>(MAT_DIALOG_DATA);
   private readonly buildingService = inject(BuildingService);
 
   readonly buildings = this.buildingService.buildings;
   selectedIds: string[] = [...this.data.user.assignedApartmentIds];
+  protectedIds: string[] = this.data.protectedIds ?? [];
 
-  isSelected(id: string): boolean {
-    return this.selectedIds.includes(id);
+  isSelected(id: string): boolean { return this.selectedIds.includes(id); }
+  isProtected(id: string): boolean { return this.protectedIds.includes(id); }
+
+  btnClass(id: string): string {
+    if (this.isProtected(id)) return 'bg-amber-500/15 border-amber-500/50 text-amber-300 cursor-not-allowed';
+    if (this.isSelected(id)) return 'bg-cyan-500/20 border-cyan-500 text-cyan-300 cursor-pointer';
+    return 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500 cursor-pointer';
   }
 
   toggle(id: string): void {
+    if (this.isProtected(id)) return;
     if (this.isSelected(id)) {
       this.selectedIds = this.selectedIds.filter(i => i !== id);
     } else {
@@ -346,11 +404,22 @@ export class AssignApartmentsDialogComponent {
     }
   }
 
+  selectTower(tower: { apartments: { id: string }[] }): void {
+    const ids = tower.apartments.map(a => a.id);
+    const toAdd = ids.filter(id => !this.isSelected(id));
+    this.selectedIds = [...this.selectedIds, ...toAdd];
+  }
+
+  deselectTower(tower: { apartments: { id: string }[] }): void {
+    const ids = tower.apartments.map(a => a.id);
+    this.selectedIds = this.selectedIds.filter(id => !ids.includes(id) || this.isProtected(id));
+  }
+
   selectAll(): void {
     this.selectedIds = this.buildingService.allApartments().map(a => a.id);
   }
 
   clearAll(): void {
-    this.selectedIds = [];
+    this.selectedIds = [...this.protectedIds];
   }
 }

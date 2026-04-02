@@ -34,6 +34,11 @@ export const routes: Routes = [
           import('./features/users/users.component').then(m => m.UsersComponent),
       },
       {
+        path: 'cycles',
+        loadComponent: () =>
+          import('./features/cycles/cycles.component').then(m => m.CyclesComponent),
+      },
+      {
         path: 'qr-management',
         loadComponent: () =>
           import('./features/qr-management/qr-management.component').then(m => m.QrManagementComponent),

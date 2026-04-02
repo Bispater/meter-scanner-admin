@@ -10,6 +10,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
 import { MeasurementService } from '../../core/services/measurement.service';
+import { CycleService } from '../../core/services/cycle.service';
 
 @Component({
   selector: 'app-main-layout',
@@ -93,17 +94,20 @@ export class MainLayoutComponent implements OnInit {
   private readonly buildingService = inject(BuildingService);
   private readonly userService = inject(UserService);
   private readonly measurementService = inject(MeasurementService);
+  private readonly cycleService = inject(CycleService);
 
   ngOnInit(): void {
     this.buildingService.loadAll();
     this.userService.loadAll();
     this.measurementService.loadAll();
+    this.cycleService.loadAll();
   }
 
   readonly navItems = [
     { route: '/app/dashboard', icon: 'dashboard', label: 'Dashboard' },
     { route: '/app/buildings', icon: 'domain', label: 'Edificios' },
     { route: '/app/users', icon: 'people', label: 'Usuarios' },
+    { route: '/app/cycles', icon: 'event_repeat', label: 'Ciclos' },
     { route: '/app/measurements', icon: 'speed', label: 'Mediciones' },
     { route: '/app/qr-management', icon: 'qr_code_2', label: 'Gestión de QRs' },
   ];

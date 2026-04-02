@@ -14,7 +14,9 @@ import { MatDialog } from '@angular/material/dialog';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { Measurement } from '../../core/models/measurement.model';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { CycleService } from '../../core/services/cycle.service';
 import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.component';
+import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 
 @Component({
   selector: 'app-measurements',
@@ -52,6 +54,21 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
           <mat-icon class="text-slate-400" style="font-size:18px;width:18px;height:18px;">filter_list</mat-icon>
           <span class="text-sm font-semibold text-slate-300">Filtros</span>
         </div>
+        <!-- Cycle quick-filter -->
+        <div class="mb-3">
+          <mat-form-field appearance="outline" class="dense-field w-full md:w-72">
+            <mat-label>Ciclo de Medición</mat-label>
+            <mat-select [(ngModel)]="filterCycle" (ngModelChange)="onCycleFilterChange($event)">
+              <mat-option value="">Sin filtro de ciclo</mat-option>
+              @for (c of cycleService.cycles(); track c.id) {
+                <mat-option [value]="c.id">
+                  {{ c.name }} — {{ c.building_name }}
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <mat-form-field appearance="outline" class="dense-field">
             <mat-label>Torre</mat-label>
@@ -113,8 +130,8 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
             <ng-container matColumnDef="photo">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Foto</th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !text-slate-200 !border-b-slate-700/50">
-                <div class="w-10 h-10 rounded-lg bg-slate-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-cyan-400 transition-all"
-                     (click)="openDetail(row)">
+                <div class="w-10 h-10 rounded-lg bg-slate-700 overflow-hidden cursor-zoom-in hover:ring-2 hover:ring-cyan-400 transition-all"
+                     (click)="openImage($event, row)">
                   <img [src]="row.photo_url" alt="" class="w-full h-full object-cover"
                     (error)="onImageError($event)" />
                 </div>
@@ -222,8 +239,10 @@ import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.co
 })
 export class MeasurementsComponent implements OnInit, OnDestroy {
   private readonly measurementService = inject(MeasurementService);
+  readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
+  private _dialogOpen = false;
 
   readonly towers = this.measurementService.towers;
 
@@ -232,6 +251,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterStatus = '';
   filterDateFrom = '';
   filterDateTo = '';
+  filterCycle = '';
 
   readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'status', 'actions'];
 
@@ -263,7 +283,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   });
 
   readonly hasActiveFilters = computed(() =>
-    !!(this.filterTower || this.filterApartment || this.filterStatus || this.filterDateFrom || this.filterDateTo)
+    !!(this.filterTower || this.filterApartment || this.filterStatus || this.filterDateFrom || this.filterDateTo || this.filterCycle)
   );
 
   applyFilters(): void {
@@ -278,12 +298,27 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.pageIndex.set(0);
   }
 
+  onCycleFilterChange(cycleId: string): void {
+    if (!cycleId) {
+      this.filterDateFrom = '';
+      this.filterDateTo = '';
+    } else {
+      const cycle = this.cycleService.cycles().find(c => c.id === cycleId);
+      if (cycle) {
+        this.filterDateFrom = cycle.scheduled_date;
+        this.filterDateTo = cycle.deadline;
+      }
+    }
+    this.applyFilters();
+  }
+
   clearFilters(): void {
     this.filterTower = '';
     this.filterApartment = '';
     this.filterStatus = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
+    this.filterCycle = '';
     this.applyFilters();
   }
 
@@ -308,6 +343,8 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   openDetail(measurement: Measurement): void {
+    if (this._dialogOpen) return;
+    this._dialogOpen = true;
     const ref = this.dialog.open(MeasurementDetailDialogComponent, {
       data: measurement,
       panelClass: 'custom-dialog',
@@ -315,9 +352,23 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
       width: '95vw',
     });
     ref.afterClosed().subscribe(result => {
+      setTimeout(() => { this._dialogOpen = false; }, 400);
       if (result === 'deleted') {
         setTimeout(() => this.applyFilters(), 300);
       }
+    });
+  }
+
+  openImage(event: Event, measurement: Measurement): void {
+    event.stopPropagation();
+    if (!measurement.photo_url) return;
+    this.dialog.open(ImageLightboxDialogComponent, {
+      data: { photoUrl: measurement.photo_url, alt: `Medidor ${measurement.meter_id}` },
+      panelClass: 'lightbox-dialog',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh',
     });
   }
 

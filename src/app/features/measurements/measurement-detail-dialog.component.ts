@@ -1,11 +1,12 @@
 import { Component, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { Measurement } from '../../core/models/measurement.model';
 import { MeasurementService } from '../../core/services/measurement.service';
+import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 
 @Component({
   selector: 'app-measurement-detail-dialog',
@@ -16,16 +17,20 @@ import { MeasurementService } from '../../core/services/measurement.service';
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700">
         <h2 class="text-lg font-bold text-white">Detalle de Medición</h2>
-        <button mat-icon-button (click)="dialogRef.close()">
+        <button mat-icon-button (click)="close($event)">
           <mat-icon>close</mat-icon>
         </button>
       </div>
 
       <!-- Photo -->
       <div class="px-6 pt-5">
-        <div class="w-full h-56 rounded-xl bg-slate-700 overflow-hidden flex items-center justify-center border border-slate-600">
+        <div class="w-full h-56 rounded-xl bg-slate-700 overflow-hidden flex items-center justify-center border border-slate-600 cursor-zoom-in relative group"
+             (click)="openFullScreen()">
           <img [src]="data.photo_url" alt="Foto del medidor" class="w-full h-full object-cover"
             (error)="onImageError($event)" />
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
+            <mat-icon class="text-white opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:36px;width:36px;height:36px;">zoom_in</mat-icon>
+          </div>
         </div>
       </div>
 
@@ -95,7 +100,7 @@ import { MeasurementService } from '../../core/services/measurement.service';
               <mat-icon>close</mat-icon> Rechazar
             </button>
           }
-          <button mat-stroked-button (click)="dialogRef.close()" class="!border-slate-600 !text-slate-300">
+          <button mat-stroked-button (click)="close($event)" class="!border-slate-600 !text-slate-300">
             Cerrar
           </button>
         </div>
@@ -110,6 +115,24 @@ export class MeasurementDetailDialogComponent {
   readonly dialogRef = inject(MatDialogRef<MeasurementDetailDialogComponent>);
   readonly data: Measurement = inject(MAT_DIALOG_DATA);
   private readonly measurementService = inject(MeasurementService);
+  private readonly dialog = inject(MatDialog);
+
+  close(event: Event): void {
+    event.stopPropagation();
+    this.dialogRef.close();
+  }
+
+  openFullScreen(): void {
+    if (!this.data.photo_url) return;
+    this.dialog.open(ImageLightboxDialogComponent, {
+      data: { photoUrl: this.data.photo_url, alt: `Medidor ${this.data.meter_id}` },
+      panelClass: 'lightbox-dialog',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh',
+    });
+  }
 
   get statusLabel(): string {
     const map: Record<string, string> = {

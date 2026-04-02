@@ -115,3 +115,17 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
 .snack-info .mat-mdc-snack-bar-action {
   color: #93c5fd !important;
 }
+
+/* ── Lightbox full-screen image dialog ── */
+.lightbox-dialog .mat-mdc-dialog-container {
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: rgba(0, 0, 0, 0.92) !important;
+  box-shadow: none !important;
+}
+.lightbox-dialog .mat-mdc-dialog-container .mdc-dialog__surface {
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
