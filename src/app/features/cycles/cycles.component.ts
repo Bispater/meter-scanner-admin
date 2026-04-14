@@ -9,6 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatTableModule } from '@angular/material/table';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { CycleService } from '../../core/services/cycle.service';
 import { BuildingService } from '../../core/services/building.service';
 import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from '../../core/models/cycle.model';
@@ -19,7 +20,7 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
 @Component({
   selector: 'app-cycles',
   standalone: true,
-  imports: [DatePipe, MatButtonModule, MatIconModule, MatDialogModule, MatTooltipModule, MatSelectModule],
+  imports: [DatePipe, FormsModule, MatButtonModule, MatIconModule, MatDialogModule, MatTooltipModule, MatSelectModule, MatSlideToggleModule],
   template: `
     <div class="space-y-5">
       <!-- Header -->
@@ -31,6 +32,28 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
         <button mat-flat-button class="!bg-cyan-600 !text-white" (click)="openCreate()">
           <mat-icon>add</mat-icon> Nuevo Ciclo
         </button>
+      </div>
+
+      <!-- Enforcement toggle -->
+      <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+               [class]="cycleEnforcement() ? 'bg-amber-500/10' : 'bg-slate-700'">
+            <mat-icon style="font-size:18px;width:18px;height:18px;"
+                      [class]="cycleEnforcement() ? 'text-amber-400' : 'text-slate-500'">lock</mat-icon>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-white">Bloquear mediciones fuera de ciclo</p>
+            <p class="text-xs text-slate-400">
+              @if (cycleEnforcement()) {
+                Los operarios <strong class="text-amber-400">solo podrán medir</strong> durante ciclos activos.
+              } @else {
+                Los ciclos son informativos. Los operarios pueden medir <strong class="text-slate-300">en cualquier momento</strong>.
+              }
+            </p>
+          </div>
+        </div>
+        <mat-slide-toggle [checked]="cycleEnforcement()" (change)="toggleEnforcement($event.checked)" color="warn" />
       </div>
 
       <!-- Stats row -->
@@ -131,6 +154,13 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
 export class CyclesComponent implements OnInit {
   readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
+
+  readonly cycleEnforcement = signal(localStorage.getItem('metscan_cycle_enforcement') === 'true');
+
+  toggleEnforcement(value: boolean): void {
+    this.cycleEnforcement.set(value);
+    localStorage.setItem('metscan_cycle_enforcement', String(value));
+  }
 
   readonly activeCycles = computed(() =>
     this.cycleService.cycles().filter(c => c.status === 'pending' || c.status === 'in_progress')

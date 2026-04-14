@@ -1,11 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialogModule, MatDialog, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatDialogModule, MatDialog, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
 import { QrService } from '../../core/services/qr.service';
@@ -14,7 +15,7 @@ import { Building, Tower, Apartment } from '../../core/models/building.model';
 @Component({
   selector: 'app-buildings',
   standalone: true,
-  imports: [MatIconModule, MatButtonModule, MatDialogModule, MatExpansionModule],
+  imports: [MatIconModule, MatButtonModule, MatDialogModule, MatExpansionModule, MatTooltipModule],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -80,11 +81,11 @@ import { Building, Tower, Apartment } from '../../core/models/building.model';
             </div>
             <div class="flex items-center gap-1">
               <span class="text-xs text-slate-500 mr-3">{{ building.towers.length }} torres · {{ countApts(building) }} dptos</span>
-              <button mat-icon-button class="!text-cyan-400" (click)="openAddTower(building)">
-                <mat-icon style="font-size:20px;width:20px;height:20px;">add</mat-icon>
+              <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-cyan-400 hover:bg-cyan-400/10 transition-colors" (click)="openAddTower(building)">
+                <mat-icon style="font-size:20px;width:20px;height:20px;line-height:1;">add</mat-icon>
               </button>
-              <button mat-icon-button class="!text-slate-400 hover:!text-red-400" (click)="deleteBuilding(building)">
-                <mat-icon style="font-size:18px;width:18px;height:18px;">delete_outline</mat-icon>
+              <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="deleteBuilding(building)">
+                <mat-icon style="font-size:18px;width:18px;height:18px;line-height:1;">delete_outline</mat-icon>
               </button>
             </div>
           </div>
@@ -99,12 +100,15 @@ import { Building, Tower, Apartment } from '../../core/models/building.model';
                   <span class="text-xs text-slate-500">({{ tower.apartments.length }} dptos)</span>
                 </div>
                 <div class="flex items-center gap-1">
-                  <button mat-icon-button class="!text-cyan-400 !w-8 !h-8" (click)="openAddApartment(building, tower)">
-                    <mat-icon style="font-size:18px;width:18px;height:18px;">add</mat-icon>
+                  <button type="button" class="inline-flex items-center justify-center h-7 px-2 rounded-md text-xs font-medium text-violet-400 hover:bg-violet-400/10 transition-colors gap-1" (click)="openBulkAddApartments(building, tower)" matTooltip="Agregar múltiples departamentos">
+                    <mat-icon style="font-size:14px;width:14px;height:14px;line-height:1;">playlist_add</mat-icon>
+                    Masivo
                   </button>
-                  <button mat-icon-button class="!text-slate-400 hover:!text-red-400 !w-8 !h-8"
-                          (click)="deleteTower(building, tower)">
-                    <mat-icon style="font-size:16px;width:16px;height:16px;">delete_outline</mat-icon>
+                  <button type="button" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-cyan-400 hover:bg-cyan-400/10 transition-colors" (click)="openAddApartment(building, tower)">
+                    <mat-icon style="font-size:18px;width:18px;height:18px;line-height:1;">add</mat-icon>
+                  </button>
+                  <button type="button" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="deleteTower(building, tower)">
+                    <mat-icon style="font-size:16px;width:16px;height:16px;line-height:1;">delete_outline</mat-icon>
                   </button>
                 </div>
               </div>
@@ -217,6 +221,23 @@ export class BuildingsComponent {
       }
     });
   }
+
+  openBulkAddApartments(building: Building, tower: Tower): void {
+    const ref = this.dialog.open(BulkApartmentDialogComponent, {
+      width: '720px',
+      panelClass: 'dark-dialog',
+      data: { buildingName: building.name, towerName: tower.name },
+    });
+    ref.afterClosed().subscribe(async (apartments: { number: string; floor: number; meterId: string }[] | undefined) => {
+      if (!apartments?.length) return;
+      // Single API call for all apartments
+      await this.buildingService.bulkAddApartments(tower.id, apartments);
+      // Generate QRs for all created apartments
+      for (const apt of apartments) {
+        await this.qrService.addQr(tower.name, apt.number, apt.meterId);
+      }
+    });
+  }
 }
 
 /* ─── Reusable Form Dialog for Building / Tower / Apartment ─── */
@@ -302,5 +323,225 @@ export class BuildingFormDialogComponent {
       case 'tower': return !!this.form.name;
       case 'apartment': return !!(this.form.number && this.form.meterId);
     }
+  }
+}
+
+/* ─── Bulk Apartment Dialog ─── */
+interface PreviewApt {
+  id: string;
+  number: string;
+  floor: number;
+  meterId: string;
+}
+
+@Component({
+  selector: 'app-bulk-apartment-dialog',
+  standalone: true,
+  imports: [
+    FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule,
+    MatButtonModule, MatIconModule, MatTooltipModule,
+  ],
+  template: `
+    <h2 mat-dialog-title class="!text-white">
+      Agregar Deptos Masivo — {{ data.buildingName }} · {{ data.towerName }}
+    </h2>
+    <mat-dialog-content class="!pt-2 space-y-4 !max-h-[70vh] overflow-y-auto">
+      <!-- Config -->
+      <div class="grid grid-cols-2 gap-4">
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Piso desde</mat-label>
+          <input matInput type="number" [(ngModel)]="floorFrom" min="1" (ngModelChange)="onConfigChange()" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Piso hasta</mat-label>
+          <input matInput type="number" [(ngModel)]="floorTo" min="1" (ngModelChange)="onConfigChange()" />
+        </mat-form-field>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Deptos por piso</mat-label>
+          <input matInput type="number" [(ngModel)]="aptsPerFloor" min="1" max="50" (ngModelChange)="onConfigChange()" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-full col-span-2">
+          <mat-label>Número inicial por piso (opcional)</mat-label>
+          <input matInput [(ngModel)]="startNumbersText" placeholder="Ej: 101,201,301 o dejar vacío para auto" (ngModelChange)="onStartNumbersChange()" />
+          <mat-hint class="!text-xs">Separar por coma. Dejar vacío usa 101, 201, 301…</mat-hint>
+        </mat-form-field>
+      </div>
+      <mat-form-field appearance="outline" class="w-full">
+        <mat-label>Prefijo medidor</mat-label>
+        <input matInput [(ngModel)]="meterPrefix" placeholder="MED-" (ngModelChange)="refreshMeterIds()" />
+      </mat-form-field>
+
+      <!-- Stats -->
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-slate-400">
+          {{ preview.length }} departamentos listos para crear
+        </p>
+        <button mat-button class="!text-amber-400 !text-xs" (click)="resetDefaults()" [disabled]="preview.length===0">
+          <mat-icon style="font-size:14px;width:14px;height:14px;">refresh</mat-icon> Regenerar defaults
+        </button>
+      </div>
+
+      <!-- Preview grouped by floor -->
+      @if (previewByFloor().length > 0) {
+        <div class="space-y-3 max-h-80 overflow-y-auto pr-1">
+          @for (group of previewByFloor(); track group.floor) {
+            <div class="bg-slate-700/40 rounded-xl p-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-cyan-400">Piso {{ group.floor }}</span>
+                <span class="text-xs text-slate-500">{{ group.items.length }} deptos</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                @for (apt of group.items; track apt.id) {
+                  <div class="group relative bg-slate-600/60 hover:bg-slate-500/60 rounded-lg px-2 py-1.5 flex items-center gap-2 transition-colors">
+                    <input [(ngModel)]="apt.number" (change)="onAptNumberChange(apt)"
+                           class="w-10 bg-transparent text-slate-200 text-xs font-mono text-center border-b border-slate-500 focus:border-cyan-400 focus:outline-none" />
+                    <span class="text-slate-500 text-xs">|</span>
+                    <input [(ngModel)]="apt.meterId" (change)="onMeterIdChange(apt)"
+                           class="w-20 bg-transparent text-slate-400 text-[10px] font-mono border-b border-slate-600 focus:border-cyan-400 focus:outline-none" />
+                    <button type="button" matTooltip="Eliminar este departamento"
+                            class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 transition-opacity"
+                            (click)="removeApt(apt.id)">
+                      <mat-icon style="font-size:14px;width:14px;height:14px;">close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
+      <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold"
+              [disabled]="preview.length === 0"
+              (click)="confirm()">
+        <mat-icon>playlist_add</mat-icon> Crear {{ preview.length }} deptos
+      </button>
+    </mat-dialog-actions>
+  `,
+})
+export class BulkApartmentDialogComponent {
+  readonly data = inject<{ buildingName: string; towerName: string }>(MAT_DIALOG_DATA);
+  private readonly dialogRef = inject(MatDialogRef<BulkApartmentDialogComponent>);
+
+  // Config
+  floorFrom = 1;
+  floorTo = 5;
+  aptsPerFloor = 2;
+  startNumbersText = ''; // comma-separated starting numbers per floor
+  meterPrefix = 'MED-';
+
+  // Preview items
+  preview: PreviewApt[] = [];
+  private idCounter = 1;
+
+  // Grouped for display
+  readonly previewByFloor = computed(() => {
+    const groups = new Map<number, PreviewApt[]>();
+    for (const apt of this.preview) {
+      if (!groups.has(apt.floor)) groups.set(apt.floor, []);
+      groups.get(apt.floor)!.push(apt);
+    }
+    return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([floor, items]) => ({ floor, items }));
+  });
+
+  constructor() {
+    this.regeneratePreview();
+  }
+
+  private regeneratePreview(): void {
+    const from = Math.max(1, this.floorFrom || 1);
+    const to = Math.max(from, this.floorTo || from);
+    const perFloor = Math.max(1, Math.min(50, this.aptsPerFloor || 1));
+    const starts = this.parseStartNumbers(from, to, perFloor);
+
+    const apts: PreviewApt[] = [];
+    for (let floor = from; floor <= to; floor++) {
+      const startNum = starts.get(floor) ?? floor * 100 + 1;
+      for (let i = 0; i < perFloor; i++) {
+        const num = String(startNum + i);
+        apts.push({
+          id: `apt-${this.idCounter++}`,
+          number: num,
+          floor,
+          meterId: `${this.meterPrefix}${num}`,
+        });
+      }
+    }
+    this.preview = apts;
+  }
+
+  private parseStartNumbers(fromFloor: number, toFloor: number, perFloor: number): Map<number, number> {
+    const starts = new Map<number, number>();
+    if (!this.startNumbersText.trim()) {
+      // Default: floor * 100 + 1
+      for (let f = fromFloor; f <= toFloor; f++) starts.set(f, f * 100 + 1);
+      return starts;
+    }
+    const parts = this.startNumbersText.split(',').map(s => s.trim()).filter(Boolean);
+    let floor = fromFloor;
+    for (const p of parts) {
+      const n = parseInt(p, 10);
+      if (!isNaN(n) && floor <= toFloor) {
+        starts.set(floor, n);
+        floor++;
+      }
+    }
+    // Fill missing with default
+    for (let f = fromFloor; f <= toFloor; f++) {
+      if (!starts.has(f)) starts.set(f, f * 100 + 1);
+    }
+    return starts;
+  }
+
+  onConfigChange(): void {
+    // Debounce slightly to avoid flicker while typing
+    setTimeout(() => this.regeneratePreview(), 50);
+  }
+
+  onStartNumbersChange(): void {
+    // Re-apply starting numbers to existing preview without full regeneration
+    const starts = this.parseStartNumbers(this.floorFrom, this.floorTo, this.aptsPerFloor);
+    let idx = 0;
+    for (let floor = this.floorFrom; floor <= this.floorTo; floor++) {
+      const startNum = starts.get(floor) ?? floor * 100 + 1;
+      for (let i = 0; i < this.aptsPerFloor; i++) {
+        if (idx < this.preview.length) {
+          const num = String(startNum + i);
+          this.preview[idx].number = num;
+          this.preview[idx].meterId = `${this.meterPrefix}${num}`;
+          idx++;
+        }
+      }
+    }
+  }
+
+  refreshMeterIds(): void {
+    for (const apt of this.preview) {
+      apt.meterId = `${this.meterPrefix}${apt.number}`;
+    }
+  }
+
+  onAptNumberChange(apt: PreviewApt): void {
+    apt.meterId = `${this.meterPrefix}${apt.number}`;
+  }
+
+  onMeterIdChange(_apt: PreviewApt): void {
+    // Custom meter ID edited — nothing auto-updates
+  }
+
+  removeApt(id: string): void {
+    this.preview = this.preview.filter(a => a.id !== id);
+  }
+
+  resetDefaults(): void {
+    this.regeneratePreview();
+  }
+
+  confirm(): void {
+    this.dialogRef.close(this.preview.map(a => ({ number: a.number, floor: a.floor, meterId: a.meterId })));
   }
 }

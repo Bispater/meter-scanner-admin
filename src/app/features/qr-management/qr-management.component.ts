@@ -43,7 +43,7 @@ import { BuildingService } from '../../core/services/building.service';
             <mat-icon class="text-emerald-400" style="font-size:18px;width:18px;height:18px;">qr_code_2</mat-icon>
           </div>
           <div>
-            <p class="text-xl font-bold text-white">{{ qrService.qrList().length }}</p>
+            <p class="text-xl font-bold text-white">{{ qrMatchCount() }}</p>
             <p class="text-xs text-slate-400">QRs generados</p>
           </div>
         </div>
@@ -190,6 +190,11 @@ export class QrManagementComponent implements OnInit {
   });
 
   readonly totalApts = computed(() => this.buildingService.allApartments().length);
+
+  readonly qrMatchCount = computed(() => {
+    const aptMeters = new Set(this.buildingService.allApartments().map(a => a.meterId));
+    return this.qrService.qrList().filter(q => aptMeters.has(q.meterId)).length;
+  });
 
   readonly missingCount = computed(() => {
     const metersWithQr = new Set(this.qrService.qrList().map(q => q.meterId));

@@ -179,6 +179,14 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
               </td>
             </ng-container>
 
+            <!-- Time Ago -->
+            <ng-container matColumnDef="time_ago">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Hace</th>
+              <td mat-cell *matCellDef="let row" class="!bg-transparent !text-slate-400 !border-b-slate-700/50 text-xs whitespace-nowrap">
+                {{ timeAgo(row.captured_at) }}
+              </td>
+            </ng-container>
+
             <!-- Status -->
             <ng-container matColumnDef="status">
               <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Estado</th>
@@ -253,7 +261,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterDateTo = '';
   filterCycle = '';
 
-  readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'status', 'actions'];
+  readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'time_ago', 'status', 'actions'];
 
   readonly filteredData = signal<Measurement[]>([]);
   readonly pageSize = signal(10);
@@ -385,5 +393,22 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     const img = event.target as HTMLImageElement;
     img.style.display = 'none';
     img.parentElement!.innerHTML = '<span class="text-slate-500 text-xs">N/A</span>';
+  }
+
+  timeAgo(dateStr: string): string {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diffMs = now - then;
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'ahora';
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return '1 día';
+    if (days < 30) return `${days} días`;
+    const months = Math.floor(days / 30);
+    if (months === 1) return '1 mes';
+    return `${months} meses`;
   }
 }

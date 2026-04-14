@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "dist/hydroscan-admin/browser",
+    "public": "dist/metscan-admin/browser",
     "ignore": [
       "firebase.json",
       "**/.*",

@@ -176,6 +176,29 @@ export class BuildingService {
     });
   }
 
+  bulkAddApartments(towerId: string, apts: Omit<Apartment, 'id'>[]): Promise<number> {
+    const payload = {
+      tower: Number(towerId),
+      apartments: apts.map(a => ({ number: a.number, floor: a.floor, meter_id: a.meterId })),
+    };
+    console.log('[BUILDINGS] POST /apartments/bulk-create', payload.apartments.length, 'items');
+    return new Promise((resolve, reject) => {
+      this.http.post<{ created: number }>(`${this.url}/apartments/bulk-create/`, payload).subscribe({
+        next: res => {
+          console.log('[BUILDINGS] Bulk apartments created:', res.created);
+          this.notify.success(`${res.created} departamentos creados`);
+          this.loadAll();
+          resolve(res.created);
+        },
+        error: err => {
+          console.error('[BUILDINGS] Bulk create error:', err);
+          this.notify.error('Error al crear departamentos masivamente');
+          reject(err);
+        },
+      });
+    });
+  }
+
   deleteApartment(_buildingId: string, _towerId: string, aptId: string): void {
     console.log('[BUILDINGS] DELETE /apartments/' + aptId);
     this.http.delete(`${this.url}/apartments/${aptId}/`).subscribe({
