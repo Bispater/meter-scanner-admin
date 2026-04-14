@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
+import { QrService } from '../../core/services/qr.service';
 import { Building, Tower, Apartment } from '../../core/models/building.model';
 
 @Component({
@@ -152,6 +153,7 @@ import { Building, Tower, Apartment } from '../../core/models/building.model';
 export class BuildingsComponent {
   readonly buildingService = inject(BuildingService);
   private readonly userService = inject(UserService);
+  private readonly qrService = inject(QrService);
   private readonly dialog = inject(MatDialog);
 
   countApts(building: Building): number {
@@ -204,13 +206,14 @@ export class BuildingsComponent {
       panelClass: 'dark-dialog',
       data: { type: 'apartment', buildingName: building.name, towerName: tower.name },
     });
-    ref.afterClosed().subscribe(result => {
+    ref.afterClosed().subscribe(async result => {
       if (result) {
         this.buildingService.addApartment(building.id, tower.id, {
           number: result.number,
           meterId: result.meterId,
           floor: result.floor,
         });
+        await this.qrService.addQr(tower.name, result.number, result.meterId);
       }
     });
   }

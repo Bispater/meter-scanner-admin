@@ -42,8 +42,8 @@ export class QrService {
     this._qrList.set(list);
   }
 
-  async addQr(tower: string, apartment: string): Promise<QrCode> {
-    const meterId = this._generateMeterId();
+  async addQr(tower: string, apartment: string, meterId?: string): Promise<QrCode> {
+    meterId = meterId || this._generateMeterId();
     const now = new Date();
     const generated = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
     const payload = this._buildPayload(meterId, tower, apartment);

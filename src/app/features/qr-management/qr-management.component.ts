@@ -1,96 +1,232 @@
-import { Component, inject, computed, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, inject, computed, OnInit, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule, MatDialog, MAT_DIALOG_DATA } from '@angular/material/dialog';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { QrService } from '../../core/services/qr.service';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { QrService, QrCode } from '../../core/services/qr.service';
 import { BuildingService } from '../../core/services/building.service';
 
 @Component({
   selector: 'app-qr-management',
   standalone: true,
-  imports: [MatIconModule, MatButtonModule, MatDialogModule],
+  imports: [MatIconModule, MatButtonModule, MatDialogModule, MatTooltipModule],
   template: `
     <div class="space-y-6">
+
+      <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-2xl font-bold text-white">Gestión de QRs</h2>
-          <p class="text-slate-400 text-sm mt-1">Generar y administrar códigos QR de medidores</p>
+          <p class="text-slate-400 text-sm mt-1">Códigos QR generados por edificio, torre y departamento</p>
         </div>
-        <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold" (click)="openCreateDialog()">
-          <mat-icon>add</mat-icon> Generar QR
-        </button>
-      </div>
-
-      <!-- QR list -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        @for (qr of qrService.qrList(); track qr.id) {
-          <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-cyan-500/30 transition-colors">
-            <div class="flex items-center gap-4">
-              <div class="w-16 h-16 bg-white rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
-                <img [src]="qr.dataUrl" [alt]="'QR ' + qr.meterId" class="w-full h-full object-contain" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-sm font-bold text-white truncate">Medidor: {{ qr.meterId }}</p>
-                <p class="text-xs text-slate-400">{{ qr.tower }} — Depto {{ qr.apartment }}</p>
-                <p class="text-xs text-slate-500 mt-1">Generado: {{ qr.generated }}</p>
-              </div>
-            </div>
-
-            <!-- Expandable QR preview for scanning -->
-            <div class="mt-3 flex justify-center">
-              <img [src]="qr.dataUrl" [alt]="'QR ' + qr.meterId"
-                   class="w-48 h-48 bg-white rounded-lg p-2 border border-slate-600 cursor-pointer hover:scale-105 transition-transform"
-                   (click)="openFullQr(qr.dataUrl, qr.meterId)" />
-            </div>
-
-            <div class="flex gap-2 mt-4 pt-3 border-t border-slate-700">
-              <button mat-stroked-button class="!border-slate-600 !text-slate-400 text-xs flex-1"
-                      (click)="downloadQr(qr)">
-                <mat-icon style="font-size:16px;width:16px;height:16px;">download</mat-icon> Descargar
-              </button>
-              <button mat-stroked-button class="!border-slate-600 !text-slate-400 text-xs flex-1"
-                      (click)="printQr(qr)">
-                <mat-icon style="font-size:16px;width:16px;height:16px;">print</mat-icon> Imprimir
-              </button>
-            </div>
-          </div>
+        @if (missingCount() > 0) {
+          <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold" (click)="generateAllMissing()" [disabled]="generating()">
+            <mat-icon>auto_fix_high</mat-icon>
+            Generar {{ missingCount() }} faltante{{ missingCount() === 1 ? '' : 's' }}
+          </button>
         }
       </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-3 gap-4">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0">
+            <mat-icon class="text-cyan-400" style="font-size:18px;width:18px;height:18px;">door_front</mat-icon>
+          </div>
+          <div>
+            <p class="text-xl font-bold text-white">{{ totalApts() }}</p>
+            <p class="text-xs text-slate-400">Departamentos</p>
+          </div>
+        </div>
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+            <mat-icon class="text-emerald-400" style="font-size:18px;width:18px;height:18px;">qr_code_2</mat-icon>
+          </div>
+          <div>
+            <p class="text-xl font-bold text-white">{{ qrService.qrList().length }}</p>
+            <p class="text-xs text-slate-400">QRs generados</p>
+          </div>
+        </div>
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+               [class]="missingCount() > 0 ? 'bg-amber-500/10' : 'bg-slate-700'">
+            <mat-icon style="font-size:18px;width:18px;height:18px;"
+                      [class]="missingCount() > 0 ? 'text-amber-400' : 'text-slate-500'">warning_amber</mat-icon>
+          </div>
+          <div>
+            <p class="text-xl font-bold" [class]="missingCount() > 0 ? 'text-amber-400' : 'text-slate-400'">{{ missingCount() }}</p>
+            <p class="text-xs text-slate-400">Sin QR</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Building sections -->
+      @for (b of tableData(); track b.building.id) {
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+
+          <!-- Building header -->
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-700 bg-slate-800">
+            <mat-icon class="text-cyan-400" style="font-size:20px;width:20px;height:20px;">domain</mat-icon>
+            <div>
+              <span class="font-bold text-white">{{ b.building.name }}</span>
+              <span class="text-slate-500 text-xs ml-2">{{ b.building.address }}</span>
+            </div>
+          </div>
+
+          <!-- Tower sections -->
+          @for (t of b.towers; track t.tower.id) {
+            <div class="border-b border-slate-700/50 last:border-b-0">
+
+              <!-- Tower subheader -->
+              <div class="flex items-center gap-2 px-5 py-2.5 bg-slate-800/60">
+                <mat-icon class="text-indigo-400" style="font-size:16px;width:16px;height:16px;">apartment</mat-icon>
+                <span class="text-sm font-semibold text-slate-300">{{ t.tower.name }}</span>
+                <span class="text-xs text-slate-500 ml-1">— {{ t.apartments.length }} depto{{ t.apartments.length !== 1 ? 's' : '' }}</span>
+              </div>
+
+              <!-- Apartments table -->
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-slate-700/50">
+                    <th class="text-left px-5 py-2 text-xs text-slate-500 font-medium w-20">Depto</th>
+                    <th class="text-left px-3 py-2 text-xs text-slate-500 font-medium w-16">Piso</th>
+                    <th class="text-left px-3 py-2 text-xs text-slate-500 font-medium">ID Medidor</th>
+                    <th class="text-center px-3 py-2 text-xs text-slate-500 font-medium w-24">QR</th>
+                    <th class="text-right px-5 py-2 text-xs text-slate-500 font-medium w-40">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of t.apartments; track row.apt.id) {
+                    <tr class="border-b border-slate-700/30 last:border-b-0 hover:bg-slate-700/20 transition-colors">
+                      <td class="px-5 py-3 font-semibold text-white">{{ row.apt.number }}</td>
+                      <td class="px-3 py-3 text-slate-400">P{{ row.apt.floor }}</td>
+                      <td class="px-3 py-3 text-slate-400 font-mono text-xs">{{ row.apt.meterId }}</td>
+
+                      <!-- QR cell -->
+                      <td class="px-3 py-3 text-center">
+                        @if (row.qr) {
+                          <img [src]="row.qr.dataUrl"
+                               class="w-10 h-10 bg-white rounded p-0.5 mx-auto cursor-pointer hover:scale-110 transition-transform border border-slate-600"
+                               [alt]="'QR ' + row.apt.meterId"
+                               (click)="openFullQr(row.qr)" />
+                        } @else {
+                          <span class="inline-flex items-center gap-1 text-amber-400/70 text-xs">
+                            <mat-icon style="font-size:13px;width:13px;height:13px;">radio_button_unchecked</mat-icon>
+                            Sin QR
+                          </span>
+                        }
+                      </td>
+
+                      <!-- Actions cell -->
+                      <td class="px-5 py-3 text-right">
+                        @if (row.qr) {
+                          <div class="inline-flex gap-1">
+                            <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-white"
+                                    matTooltip="Ver completo"
+                                    (click)="openFullQr(row.qr!)">
+                              <mat-icon style="font-size:18px;width:18px;height:18px;">open_in_new</mat-icon>
+                            </button>
+                            <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-cyan-400"
+                                    matTooltip="Descargar"
+                                    (click)="downloadQr(row.qr!)">
+                              <mat-icon style="font-size:18px;width:18px;height:18px;">download</mat-icon>
+                            </button>
+                            <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-slate-200"
+                                    matTooltip="Imprimir"
+                                    (click)="printQr(row.qr!, t.tower.name, row.apt.number)">
+                              <mat-icon style="font-size:18px;width:18px;height:18px;">print</mat-icon>
+                            </button>
+                          </div>
+                        } @else {
+                          <button mat-stroked-button
+                                  class="!border-cyan-500/40 !text-cyan-400 !text-xs !h-7 !px-3"
+                                  (click)="generateForApt(t.tower.name, row.apt.number, row.apt.meterId)">
+                            <mat-icon style="font-size:14px;width:14px;height:14px;">qr_code_2</mat-icon>
+                            Generar
+                          </button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          @if (b.towers.length === 0) {
+            <div class="p-8 text-center text-slate-500 text-sm">Sin torres registradas.</div>
+          }
+        </div>
+      }
+
+      @if (tableData().length === 0) {
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-12 text-center">
+          <mat-icon class="text-slate-600" style="font-size:48px;width:48px;height:48px;">qr_code</mat-icon>
+          <p class="text-slate-400 mt-3">No hay edificios registrados. Crea uno primero en la sección Edificios.</p>
+        </div>
+      }
     </div>
   `,
 })
 export class QrManagementComponent implements OnInit {
-  readonly qrService = inject(QrService);
-  private readonly dialog = inject(MatDialog);
+  readonly qrService    = inject(QrService);
+  readonly buildingService = inject(BuildingService);
+  private  readonly dialog = inject(MatDialog);
+
+  readonly generating = signal(false);
+
+  readonly tableData = computed(() => {
+    const qrByMeter = new Map(this.qrService.qrList().map(q => [q.meterId, q]));
+    return this.buildingService.buildings().map(b => ({
+      building: b,
+      towers: b.towers.map(t => ({
+        tower: t,
+        apartments: t.apartments.map(a => ({
+          apt: a,
+          qr: qrByMeter.get(a.meterId) ?? null,
+        })),
+      })),
+    }));
+  });
+
+  readonly totalApts = computed(() => this.buildingService.allApartments().length);
+
+  readonly missingCount = computed(() => {
+    const metersWithQr = new Set(this.qrService.qrList().map(q => q.meterId));
+    return this.buildingService.allApartments().filter(a => !metersWithQr.has(a.meterId)).length;
+  });
 
   ngOnInit(): void {
     this.qrService.init();
   }
 
-  openCreateDialog(): void {
-    const dialogRef = this.dialog.open(QrCreateDialogComponent, {
-      width: '440px',
-      panelClass: 'dark-dialog',
-    });
-    dialogRef.afterClosed().subscribe(result => {
-      if (result) {
-        this.qrService.addQr(result.tower, result.apartment);
-      }
-    });
+  async generateForApt(towerName: string, aptNumber: string, meterId: string): Promise<void> {
+    await this.qrService.addQr(towerName, aptNumber, meterId);
   }
 
-  downloadQr(qr: { dataUrl: string; meterId: string }): void {
+  async generateAllMissing(): Promise<void> {
+    this.generating.set(true);
+    const metersWithQr = new Set(this.qrService.qrList().map(q => q.meterId));
+    for (const b of this.buildingService.buildings()) {
+      for (const t of b.towers) {
+        for (const a of t.apartments) {
+          if (!metersWithQr.has(a.meterId)) {
+            await this.qrService.addQr(t.name, a.number, a.meterId);
+          }
+        }
+      }
+    }
+    this.generating.set(false);
+  }
+
+  downloadQr(qr: QrCode): void {
     const link = document.createElement('a');
     link.href = qr.dataUrl;
     link.download = `QR_${qr.meterId}.png`;
     link.click();
   }
 
-  printQr(qr: { dataUrl: string; meterId: string; tower: string; apartment: string }): void {
+  printQr(qr: QrCode, tower: string, apartment: string): void {
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write(`
@@ -99,7 +235,7 @@ export class QrManagementComponent implements OnInit {
       img{width:300px;height:300px;} h2,p{margin:4px 0;}</style></head>
       <body>
         <h2>Medidor: ${qr.meterId}</h2>
-        <p>${qr.tower} — Depto ${qr.apartment}</p>
+        <p>${tower} — Depto ${apartment}</p>
         <img src="${qr.dataUrl}" />
         <script>setTimeout(()=>{window.print();},400);</script>
       </body></html>
@@ -107,9 +243,9 @@ export class QrManagementComponent implements OnInit {
     w.document.close();
   }
 
-  openFullQr(dataUrl: string, meterId: string): void {
+  openFullQr(qr: QrCode): void {
     this.dialog.open(QrPreviewDialogComponent, {
-      data: { dataUrl, meterId },
+      data: qr,
       panelClass: 'dark-dialog',
       width: '380px',
     });
@@ -133,58 +269,5 @@ export class QrManagementComponent implements OnInit {
   `,
 })
 export class QrPreviewDialogComponent {
-  readonly data = inject<{ dataUrl: string; meterId: string }>(MAT_DIALOG_DATA);
-}
-
-/* ─── Create-QR Dialog ─── */
-@Component({
-  selector: 'app-qr-create-dialog',
-  standalone: true,
-  imports: [
-    FormsModule,
-    MatDialogModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatSelectModule,
-    MatButtonModule,
-    MatIconModule,
-  ],
-  template: `
-    <h2 mat-dialog-title class="!text-white">Generar nuevo QR</h2>
-    <mat-dialog-content class="!pt-2 space-y-4">
-      <mat-form-field appearance="outline" class="w-full">
-        <mat-label>Torre</mat-label>
-        <mat-select [(ngModel)]="tower">
-          @for (t of towers(); track t) {
-            <mat-option [value]="t">{{ t }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline" class="w-full">
-        <mat-label>Departamento</mat-label>
-        <input matInput [(ngModel)]="apartment" placeholder="Ej: 101" />
-      </mat-form-field>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
-      <button
-        mat-flat-button
-        class="!bg-cyan-500 !text-slate-900 !font-semibold"
-        [disabled]="!tower || !apartment"
-        [mat-dialog-close]="{ tower, apartment }"
-      >
-        <mat-icon>qr_code_2</mat-icon> Generar
-      </button>
-    </mat-dialog-actions>
-  `,
-  styles: [`
-    :host { display: block; }
-  `],
-})
-export class QrCreateDialogComponent {
-  private readonly buildingService = inject(BuildingService);
-  readonly towers = computed(() => this.buildingService.allTowers().map(t => t.name));
-  tower = '';
-  apartment = '';
+  readonly data = inject<QrCode>(MAT_DIALOG_DATA);
 }

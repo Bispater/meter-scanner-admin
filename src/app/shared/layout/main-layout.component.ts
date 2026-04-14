@@ -7,6 +7,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { AuthService } from '../../core/services/auth.service';
+import { DemoModeService } from '../../core/services/demo-mode.service';
 import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
 import { MeasurementService } from '../../core/services/measurement.service';
@@ -33,7 +34,7 @@ import { CycleService } from '../../core/services/cycle.service';
         <!-- Logo -->
         <div class="h-16 flex items-center gap-3 px-5 border-b border-slate-700">
           <mat-icon class="text-cyan-400 text-3xl" style="font-size:28px;width:28px;height:28px;">water_drop</mat-icon>
-          <span class="text-lg font-bold text-white tracking-tight">HydroScan</span>
+          <span class="text-lg font-bold text-white tracking-tight">Metscan</span>
           <span class="text-xs text-cyan-400 font-medium bg-cyan-400/10 px-2 py-0.5 rounded-full">Admin</span>
         </div>
 
@@ -53,12 +54,20 @@ import { CycleService } from '../../core/services/cycle.service';
 
         <!-- Bottom -->
         <div class="p-4 border-t border-slate-700">
-          <div class="text-xs text-slate-500 text-center">HydroScan v1.0 — MVP</div>
+          <div class="text-xs text-slate-500 text-center">Metscan v1.0 — MVP</div>
         </div>
       </aside>
 
       <!-- Main Content -->
       <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Demo mode banner -->
+        @if (demoMode.isActive()) {
+          <div class="flex items-center justify-center gap-2 bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 shrink-0">
+            <mat-icon class="text-amber-400" style="font-size:16px;width:16px;height:16px;">science</mat-icon>
+            <span class="text-amber-400 text-xs font-semibold">MODO DEMO</span>
+            <span class="text-amber-400/70 text-xs">— Los datos son ficticios y se reinician al recargar la página.</span>
+          </div>
+        }
         <!-- Toolbar -->
         <header class="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 shrink-0">
           <h1 class="text-base font-semibold text-slate-200">Panel de Administración</h1>
@@ -90,6 +99,7 @@ import { CycleService } from '../../core/services/cycle.service';
 })
 export class MainLayoutComponent implements OnInit {
   readonly authService = inject(AuthService);
+  readonly demoMode = inject(DemoModeService);
   private readonly router = inject(Router);
   private readonly buildingService = inject(BuildingService);
   private readonly userService = inject(UserService);
@@ -114,6 +124,6 @@ export class MainLayoutComponent implements OnInit {
 
   onLogout(): void {
     this.authService.logout();
-    this.router.navigate(['/login']);
+    this.router.navigate(['/']);
   }
 }
