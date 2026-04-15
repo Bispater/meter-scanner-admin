@@ -9,6 +9,7 @@ interface ApiApartment {
   number: string;
   floor: number;
   meter_id: string;
+  qr_code: string;
   tower: number;
 }
 
@@ -244,11 +245,13 @@ export class BuildingService {
   }
 
   private _mapApartment(a: ApiApartment): Apartment {
+    const towerShort = (a as any)._towerName ? ((a as any)._towerName as string).replace(/^[Tt]orre\s+/, '').trim() : '';
     return {
       id: String(a.id),
       number: a.number,
       floor: a.floor,
-      meterId: a.meter_id,
+      meterId: a.meter_id ?? '',
+      qrCode: a.qr_code || `${a.number}${towerShort}`,
     };
   }
 }

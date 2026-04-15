@@ -48,6 +48,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/qr-management/qr-management.component').then(m => m.QrManagementComponent),
       },
+      {
+        path: 'organizations',
+        loadComponent: () =>
+          import('./features/organizations/organizations.component').then(m => m.OrganizationsComponent),
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },

@@ -12,6 +12,7 @@ import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { CycleService } from '../../core/services/cycle.service';
+import { OrganizationService } from '../../core/services/organization.service';
 
 @Component({
   selector: 'app-main-layout',
@@ -72,12 +73,21 @@ import { CycleService } from '../../core/services/cycle.service';
         <header class="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 shrink-0">
           <h1 class="text-base font-semibold text-slate-200">Panel de Administración</h1>
           <div class="flex items-center gap-3">
+            @if (authService.user()?.organizationName) {
+              <span class="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-700/60 border border-slate-600 rounded-full px-3 py-1">
+                <mat-icon style="font-size:13px;width:13px;height:13px;" class="text-cyan-400">business</mat-icon>
+                {{ authService.user()?.organizationName }}
+              </span>
+            }
             <div class="flex items-center gap-2 bg-slate-700/50 rounded-full px-3 py-1.5 cursor-pointer" [matMenuTriggerFor]="userMenu">
               <mat-icon style="font-size:18px;width:18px;height:18px;" class="text-cyan-400">admin_panel_settings</mat-icon>
               <span class="text-sm text-slate-300">{{ authService.user()?.displayName }}</span>
               <mat-icon style="font-size:18px;width:18px;height:18px;" class="text-slate-400">expand_more</mat-icon>
             </div>
             <mat-menu #userMenu="matMenu">
+              <div class="px-4 py-2 border-b border-slate-700">
+                <p class="text-xs text-slate-400">{{ authService.user()?.organizationName ?? 'Sin organización' }}</p>
+              </div>
               <button mat-menu-item (click)="onLogout()">
                 <mat-icon>logout</mat-icon>
                 <span>Cerrar Sesión</span>
@@ -105,12 +115,14 @@ export class MainLayoutComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly measurementService = inject(MeasurementService);
   private readonly cycleService = inject(CycleService);
+  private readonly organizationService = inject(OrganizationService);
 
   ngOnInit(): void {
     this.buildingService.loadAll();
     this.userService.loadAll();
     this.measurementService.loadAll();
     this.cycleService.loadAll();
+    this.organizationService.loadAll();
   }
 
   readonly navItems = [
@@ -120,6 +132,7 @@ export class MainLayoutComponent implements OnInit {
     { route: '/app/cycles', icon: 'event_repeat', label: 'Ciclos' },
     { route: '/app/measurements', icon: 'speed', label: 'Mediciones' },
     { route: '/app/qr-management', icon: 'qr_code_2', label: 'Gestión de QRs' },
+    { route: '/app/organizations', icon: 'corporate_fare', label: 'Organizaciones' },
   ];
 
   onLogout(): void {

@@ -10,6 +10,8 @@ export interface SessionUser {
   username: string;
   displayName: string;
   role: string;
+  organizationId: number | null;
+  organizationName: string | null;
 }
 
 interface JwtResponse {
@@ -26,6 +28,8 @@ interface MeResponse {
   phone: string;
   role: string;
   is_active: boolean;
+  organization_id: number | null;
+  organization_name: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -41,7 +45,7 @@ export class AuthService {
   async login(username: string, password: string, isDemoLogin = false): Promise<boolean> {
     if (isDemoLogin && username === 'admin' && password === 'admin') {
       this.demoMode.activate();
-      const session: SessionUser = { id: 'demo-1', username: 'admin', displayName: 'Admin Demo', role: 'admin' };
+      const session: SessionUser = { id: 'demo-1', username: 'admin', displayName: 'Admin Demo', role: 'admin', organizationId: null, organizationName: 'Demo' };
       this._user.set(session);
       sessionStorage.setItem('metscan_user', JSON.stringify(session));
       sessionStorage.setItem('metscan_access_token', 'DEMO_ACCESS_TOKEN');
@@ -72,6 +76,8 @@ export class AuthService {
         username: me.username,
         displayName: `${me.first_name} ${me.last_name}`.trim() || me.username,
         role: me.role,
+        organizationId: me.organization_id ?? null,
+        organizationName: me.organization_name ?? null,
       };
       this._user.set(session);
       sessionStorage.setItem('metscan_user', JSON.stringify(session));

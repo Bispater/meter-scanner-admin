@@ -3,12 +3,13 @@ import QRCode from 'qrcode';
 
 export interface QrCode {
   id: string;
-  meterId: string;
+  qrCode: string;         // stable identifier: aptNumber + towerShort (e.g. "1409A")
+  meterId: string;        // physical meter ID (informational, can change)
   tower: string;
   apartment: string;
   generated: string;
   dataUrl: string;        // base64 PNG data-URL of the QR image
-  payload: string;        // raw JSON string encoded in the QR
+  payload: string;        // raw string encoded in the QR (= qrCode value)
 }
 
 @Injectable({ providedIn: 'root' })
@@ -25,32 +26,34 @@ export class QrService {
     this._initialized = true;
 
     const seed = [
-      { id: 'qr-001', meterId: '621659-11', tower: 'Torre A', apartment: '101', generated: '20/03/2026' },
-      { id: 'qr-002', meterId: '24081375',  tower: 'Torre B', apartment: '504', generated: '20/03/2026' },
-      { id: 'qr-003', meterId: '785412-03', tower: 'Torre A', apartment: '203', generated: '21/03/2026' },
-      { id: 'qr-004', meterId: '963258-07', tower: 'Torre C', apartment: '302', generated: '22/03/2026' },
-      { id: 'qr-005', meterId: '147852-19', tower: 'Torre B', apartment: '201', generated: '23/03/2026' },
-      { id: 'qr-006', meterId: '369258-22', tower: 'Torre A', apartment: '405', generated: '24/03/2026' },
+      { tower: 'Torre A', apartment: '101', meterId: '621659-11', generated: '20/03/2026' },
+      { tower: 'Torre B', apartment: '504', meterId: '24081375',  generated: '20/03/2026' },
+      { tower: 'Torre A', apartment: '203', meterId: '785412-03', generated: '21/03/2026' },
+      { tower: 'Torre C', apartment: '302', meterId: '963258-07', generated: '22/03/2026' },
+      { tower: 'Torre B', apartment: '201', meterId: '147852-19', generated: '23/03/2026' },
+      { tower: 'Torre A', apartment: '405', meterId: '369258-22', generated: '24/03/2026' },
     ];
 
     const list: QrCode[] = [];
     for (const s of seed) {
-      const payload = this._buildPayload(s.meterId, s.tower, s.apartment);
+      const qrCode = this._buildQrCode(s.tower, s.apartment);
+      const payload = this._buildPayload(qrCode, s.tower, s.apartment);
       const dataUrl = await this._toDataUrl(payload);
-      list.push({ ...s, payload, dataUrl });
+      list.push({ id: `qr-${s.apartment}${this._towerShort(s.tower)}`, qrCode, ...s, payload, dataUrl });
     }
     this._qrList.set(list);
   }
 
-  async addQr(tower: string, apartment: string, meterId?: string): Promise<QrCode> {
-    meterId = meterId || this._generateMeterId();
+  async addQr(tower: string, apartment: string, meterId: string = ''): Promise<QrCode> {
+    const qrCode = this._buildQrCode(tower, apartment);
     const now = new Date();
     const generated = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-    const payload = this._buildPayload(meterId, tower, apartment);
+    const payload = this._buildPayload(qrCode, tower, apartment);
     const dataUrl = await this._toDataUrl(payload);
 
     const newQr: QrCode = {
       id: `qr-${Date.now()}`,
+      qrCode,
       meterId,
       tower,
       apartment,
@@ -62,16 +65,25 @@ export class QrService {
     return newQr;
   }
 
-  getByMeterId(meterId: string): QrCode | undefined {
-    return this._qrList().find(q => q.meterId === meterId);
+  getByQrCode(qrCode: string): QrCode | undefined {
+    return this._qrList().find(q => q.qrCode === qrCode);
   }
 
-  /** JSON payload the Flutter app expects */
-  private _buildPayload(meterId: string, tower: string, apartment: string): string {
+  /** QR payload: JSON with qr_code + apartment_info for Flutter app */
+  private _buildPayload(qrCode: string, tower: string, apartment: string): string {
     return JSON.stringify({
-      meter_id: meterId,
+      qr_code: qrCode,
       apartment_info: `${tower} — Depto ${apartment}`,
     });
+  }
+
+  /** Derive the stable qr_code from tower name + apartment number */
+  private _buildQrCode(tower: string, apartment: string): string {
+    return `${apartment}${this._towerShort(tower)}`;
+  }
+
+  private _towerShort(tower: string): string {
+    return tower.replace(/^[Tt]orre\s+/, '').trim();
   }
 
   private async _toDataUrl(text: string): Promise<string> {
@@ -81,11 +93,5 @@ export class QrService {
       color: { dark: '#000000', light: '#ffffff' },
       errorCorrectionLevel: 'M',
     });
-  }
-
-  private _generateMeterId(): string {
-    const num = Math.floor(100000 + Math.random() * 900000);
-    const suffix = String(Math.floor(10 + Math.random() * 90));
-    return `${num}-${suffix}`;
   }
 }
