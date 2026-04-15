@@ -10,7 +10,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { BuildingService } from '../../core/services/building.service';
 import { UserService } from '../../core/services/user.service';
 import { QrService } from '../../core/services/qr.service';
-import { Building, Tower, Apartment } from '../../core/models/building.model';
+import { Building, Tower, Apartment, ReadingLayout } from '../../core/models/building.model';
 
 @Component({
   selector: 'app-buildings',
@@ -123,10 +123,15 @@ import { Building, Tower, Apartment } from '../../core/models/building.model';
                       <span class="text-slate-500">P{{ apt.floor }}</span>
                       <span class="text-slate-500">·</span>
                       <span class="text-slate-500">{{ apt.meterId }}</span>
+                      <span class="text-slate-600 font-mono" matTooltip="Tipo de medidor">{{ apt.readingLayout }}</span>
                       <span class="text-xs px-1 rounded" [class]="getOperatorForApt(apt.id) ? 'bg-cyan-500/10 text-cyan-400' : 'bg-amber-500/10 text-amber-400'">
                         {{ getOperatorForApt(apt.id) || 'Sin asignar' }}
                       </span>
-                      <button class="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      <button type="button" class="text-slate-600 hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                              (click)="openEditApartment(building, tower, apt); $event.stopPropagation()">
+                        <mat-icon style="font-size:14px;width:14px;height:14px;">edit</mat-icon>
+                      </button>
+                      <button type="button" class="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                               (click)="deleteApartment(building, tower, apt)">
                         <mat-icon style="font-size:14px;width:14px;height:14px;">close</mat-icon>
                       </button>
@@ -210,15 +215,39 @@ export class BuildingsComponent {
       panelClass: 'dark-dialog',
       data: { type: 'apartment', buildingName: building.name, towerName: tower.name },
     });
-    ref.afterClosed().subscribe(async result => {
-      if (result) {
-        this.buildingService.addApartment(building.id, tower.id, {
-          number: result.number,
-          meterId: result.meterId,
-          floor: result.floor,
-        });
-        await this.qrService.addQr(tower.name, result.number, result.meterId);
-      }
+    ref.afterClosed().subscribe(result => {
+      if (!result) return;
+      this.buildingService.addApartment(building.id, tower.id, {
+        number: result.number,
+        meterId: result.meterId,
+        floor: result.floor,
+        readingLayout: result.readingLayout as ReadingLayout,
+      }).subscribe((res: unknown) => {
+        const created = res as { id?: number };
+        void this.qrService.addQr(
+          tower.name,
+          result.number,
+          result.meterId,
+          result.readingLayout as 'A' | 'B',
+          created?.id != null ? +created.id : undefined,
+        );
+      });
+    });
+  }
+
+  openEditApartment(building: Building, tower: Tower, apt: Apartment): void {
+    const ref = this.dialog.open(EditApartmentDialogComponent, {
+      width: '480px',
+      panelClass: 'dark-dialog',
+      data: { apartment: apt, towerName: tower.name, buildingName: building.name },
+    });
+    ref.afterClosed().subscribe(result => {
+      if (!result) return;
+      this.buildingService.updateApartment(apt.id, {
+        number: result.number,
+        meterId: result.meterId,
+        readingLayout: result.readingLayout as ReadingLayout,
+      });
     });
   }
 
@@ -228,13 +257,11 @@ export class BuildingsComponent {
       panelClass: 'dark-dialog',
       data: { buildingName: building.name, towerName: tower.name },
     });
-    ref.afterClosed().subscribe(async (apartments: { number: string; floor: number; meterId: string }[] | undefined) => {
+    ref.afterClosed().subscribe(async (apartments: Omit<Apartment, 'id'>[] | undefined) => {
       if (!apartments?.length) return;
-      // Single API call for all apartments
       await this.buildingService.bulkAddApartments(tower.id, apartments);
-      // Generate QRs for all created apartments
       for (const apt of apartments) {
-        await this.qrService.addQr(tower.name, apt.number, apt.meterId);
+        await this.qrService.addQr(tower.name, apt.number, apt.meterId, apt.readingLayout);
       }
     });
   }
@@ -289,6 +316,29 @@ export class BuildingsComponent {
             <mat-label>ID Medidor</mat-label>
             <input matInput [(ngModel)]="form.meterId" placeholder="Ej: 621659-11" />
           </mat-form-field>
+          <div>
+            <p class="text-xs text-slate-400 mb-2">Tipo de medidor</p>
+            <div class="grid grid-cols-2 gap-3">
+              <button type="button"
+                      class="flex flex-col items-stretch rounded-xl border-2 p-2 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                      [class.border-cyan-400]="form.readingLayout === 'A'"
+                      [class.border-slate-600]="form.readingLayout !== 'A'"
+                      (click)="form.readingLayout = 'A'">
+                <img src="assets/meter-types/type_A.png" alt="Referencia medidor tipo A"
+                     class="h-28 w-full object-contain rounded-lg bg-slate-900/40" />
+                <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo A</span>
+              </button>
+              <button type="button"
+                      class="flex flex-col items-stretch rounded-xl border-2 p-2 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                      [class.border-cyan-400]="form.readingLayout === 'B'"
+                      [class.border-slate-600]="form.readingLayout !== 'B'"
+                      (click)="form.readingLayout = 'B'">
+                <img src="assets/meter-types/type_B.png" alt="Referencia medidor tipo B"
+                     class="h-28 w-full object-contain rounded-lg bg-slate-900/40" />
+                <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo B</span>
+              </button>
+            </div>
+          </div>
         }
       }
     </mat-dialog-content>
@@ -315,13 +365,14 @@ export class BuildingFormDialogComponent {
     number: '',
     floor: 1,
     meterId: '',
+    readingLayout: 'A',
   };
 
   isValid(): boolean {
     switch (this.data.type) {
       case 'building': return !!(this.form.name && this.form.address);
       case 'tower': return !!this.form.name;
-      case 'apartment': return !!(this.form.number && this.form.meterId);
+      case 'apartment': return !!(this.form.number && this.form.meterId && this.form.readingLayout);
     }
   }
 }
@@ -373,12 +424,38 @@ interface PreviewApt {
         <input matInput [(ngModel)]="meterPrefix" placeholder="MED-" (ngModelChange)="refreshMeterIds()" />
       </mat-form-field>
 
-      <!-- Stats -->
-      <div class="flex items-center justify-between">
-        <p class="text-xs text-slate-400">
-          {{ preview.length }} departamentos listos para crear
+      <div>
+        <p class="text-xs text-slate-400 mb-2">Tipo de medidor (todos los departamentos nuevos)</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button"
+                  class="flex flex-col items-stretch rounded-xl border-2 p-1.5 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                  [class.border-cyan-400]="bulkReadingLayout === 'A'"
+                  [class.border-slate-600]="bulkReadingLayout !== 'A'"
+                  (click)="bulkReadingLayout = 'A'">
+            <img src="assets/meter-types/type_A.png" alt="Tipo A" class="h-20 w-full object-contain rounded-lg bg-slate-900/40" />
+            <span class="mt-1 text-xs font-medium text-center text-slate-200">Tipo A</span>
+          </button>
+          <button type="button"
+                  class="flex flex-col items-stretch rounded-xl border-2 p-1.5 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                  [class.border-cyan-400]="bulkReadingLayout === 'B'"
+                  [class.border-slate-600]="bulkReadingLayout !== 'B'"
+                  (click)="bulkReadingLayout = 'B'">
+            <img src="assets/meter-types/type_B.png" alt="Tipo B" class="h-20 w-full object-contain rounded-lg bg-slate-900/40" />
+            <span class="mt-1 text-xs font-medium text-center text-slate-200">Tipo B</span>
+          </button>
+        </div>
+        <p class="text-slate-500 text-xs leading-relaxed mt-2">
+          Por defecto todos quedan en <span class="text-slate-300">Tipo A</span>.
+          Podrás cambiar el tipo de cada departamento individualmente después (icono editar en la lista de deptos).
         </p>
-        <button mat-button class="!text-amber-400 !text-xs" (click)="resetDefaults()" [disabled]="preview.length===0">
+      </div>
+
+      <!-- Stats -->
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-slate-400">
+          {{ preview().length }} departamentos listos para crear
+        </p>
+        <button mat-button class="!text-amber-400 !text-xs shrink-0" (click)="resetDefaults()" [disabled]="preview().length === 0">
           <mat-icon style="font-size:14px;width:14px;height:14px;">refresh</mat-icon> Regenerar defaults
         </button>
       </div>
@@ -416,9 +493,9 @@ interface PreviewApt {
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
       <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold"
-              [disabled]="preview.length === 0"
+              [disabled]="preview().length === 0"
               (click)="confirm()">
-        <mat-icon>playlist_add</mat-icon> Crear {{ preview.length }} deptos
+        <mat-icon>playlist_add</mat-icon> Crear {{ preview().length }} deptos
       </button>
     </mat-dialog-actions>
   `,
@@ -433,15 +510,15 @@ export class BulkApartmentDialogComponent {
   aptsPerFloor = 2;
   startNumbersText = ''; // comma-separated starting numbers per floor
   meterPrefix = 'MED-';
+  bulkReadingLayout: ReadingLayout = 'A';
 
-  // Preview items
-  preview: PreviewApt[] = [];
+  /** Vista previa reactiva: el listado por piso se actualiza al cambiar deptos por piso, pisos, etc. */
+  readonly preview = signal<PreviewApt[]>([]);
   private idCounter = 1;
 
-  // Grouped for display
   readonly previewByFloor = computed(() => {
     const groups = new Map<number, PreviewApt[]>();
-    for (const apt of this.preview) {
+    for (const apt of this.preview()) {
       if (!groups.has(apt.floor)) groups.set(apt.floor, []);
       groups.get(apt.floor)!.push(apt);
     }
@@ -471,7 +548,7 @@ export class BulkApartmentDialogComponent {
         });
       }
     }
-    this.preview = apts;
+    this.preview.set(apts);
   }
 
   private parseStartNumbers(fromFloor: number, toFloor: number, perFloor: number): Map<number, number> {
@@ -498,43 +575,56 @@ export class BulkApartmentDialogComponent {
   }
 
   onConfigChange(): void {
-    // Debounce slightly to avoid flicker while typing
-    setTimeout(() => this.regeneratePreview(), 50);
+    queueMicrotask(() => this.regeneratePreview());
   }
 
   onStartNumbersChange(): void {
-    // Re-apply starting numbers to existing preview without full regeneration
-    const starts = this.parseStartNumbers(this.floorFrom, this.floorTo, this.aptsPerFloor);
+    const from = Math.max(1, this.floorFrom || 1);
+    const to = Math.max(from, this.floorTo || from);
+    const perFloor = Math.max(1, Math.min(50, this.aptsPerFloor || 1));
+    const expected = (to - from + 1) * perFloor;
+    const current = this.preview();
+    if (current.length !== expected) {
+      this.regeneratePreview();
+      return;
+    }
+    const starts = this.parseStartNumbers(from, to, perFloor);
+    const list = current.map(a => ({ ...a }));
     let idx = 0;
-    for (let floor = this.floorFrom; floor <= this.floorTo; floor++) {
+    for (let floor = from; floor <= to; floor++) {
       const startNum = starts.get(floor) ?? floor * 100 + 1;
-      for (let i = 0; i < this.aptsPerFloor; i++) {
-        if (idx < this.preview.length) {
+      for (let i = 0; i < perFloor; i++) {
+        if (idx < list.length) {
           const num = String(startNum + i);
-          this.preview[idx].number = num;
-          this.preview[idx].meterId = `${this.meterPrefix}${num}`;
+          list[idx].number = num;
+          list[idx].meterId = `${this.meterPrefix}${num}`;
           idx++;
         }
       }
     }
+    this.preview.set(list);
   }
 
   refreshMeterIds(): void {
-    for (const apt of this.preview) {
-      apt.meterId = `${this.meterPrefix}${apt.number}`;
-    }
+    this.preview.update(prev =>
+      prev.map(apt => ({
+        ...apt,
+        meterId: `${this.meterPrefix}${apt.number}`,
+      })),
+    );
   }
 
   onAptNumberChange(apt: PreviewApt): void {
     apt.meterId = `${this.meterPrefix}${apt.number}`;
+    this.preview.update(prev => [...prev]);
   }
 
   onMeterIdChange(_apt: PreviewApt): void {
-    // Custom meter ID edited — nothing auto-updates
+    this.preview.update(prev => [...prev]);
   }
 
   removeApt(id: string): void {
-    this.preview = this.preview.filter(a => a.id !== id);
+    this.preview.update(prev => prev.filter(a => a.id !== id));
   }
 
   resetDefaults(): void {
@@ -542,6 +632,93 @@ export class BulkApartmentDialogComponent {
   }
 
   confirm(): void {
-    this.dialogRef.close(this.preview.map(a => ({ number: a.number, floor: a.floor, meterId: a.meterId })));
+    this.dialogRef.close(
+      this.preview().map(a => ({
+        number: a.number,
+        floor: a.floor,
+        meterId: a.meterId,
+        readingLayout: this.bulkReadingLayout,
+      })),
+    );
+  }
+}
+
+/* ─── Edit apartment dialog ─── */
+@Component({
+  selector: 'app-edit-apartment-dialog',
+  standalone: true,
+  imports: [
+    FormsModule, MatDialogModule, MatFormFieldModule, MatInputModule,
+    MatButtonModule, MatIconModule,
+  ],
+  template: `
+    <h2 mat-dialog-title class="!text-white">Editar Depto — {{ data.buildingName }} · {{ data.towerName }}</h2>
+    <mat-dialog-content class="!pt-2 space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Número de Depto</mat-label>
+          <input matInput [(ngModel)]="form.number" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Piso</mat-label>
+          <input matInput [(ngModel)]="form.floor" type="number" />
+        </mat-form-field>
+      </div>
+      <mat-form-field appearance="outline" class="w-full">
+        <mat-label>ID Medidor</mat-label>
+        <input matInput [(ngModel)]="form.meterId" />
+      </mat-form-field>
+      <div>
+        <p class="text-xs text-slate-400 mb-2">Tipo de medidor</p>
+        <div class="grid grid-cols-2 gap-3">
+          <button type="button"
+                  class="flex flex-col items-stretch rounded-xl border-2 p-2 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                  [class.border-cyan-400]="form.readingLayout === 'A'"
+                  [class.border-slate-600]="form.readingLayout !== 'A'"
+                  (click)="form.readingLayout = 'A'">
+            <img src="assets/meter-types/type_A.png" alt="Referencia medidor tipo A"
+                 class="h-24 w-full object-contain rounded-lg bg-slate-900/40" />
+            <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo A</span>
+          </button>
+          <button type="button"
+                  class="flex flex-col items-stretch rounded-xl border-2 p-2 transition-colors bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                  [class.border-cyan-400]="form.readingLayout === 'B'"
+                  [class.border-slate-600]="form.readingLayout !== 'B'"
+                  (click)="form.readingLayout = 'B'">
+            <img src="assets/meter-types/type_B.png" alt="Referencia medidor tipo B"
+                 class="h-24 w-full object-contain rounded-lg bg-slate-900/40" />
+            <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo B</span>
+          </button>
+        </div>
+      </div>
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
+      <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold"
+              [disabled]="!form.number || !form.meterId"
+              [mat-dialog-close]="form">Guardar</button>
+    </mat-dialog-actions>
+  `,
+})
+export class EditApartmentDialogComponent {
+  readonly data = inject<{
+    apartment: Apartment;
+    towerName: string;
+    buildingName: string;
+  }>(MAT_DIALOG_DATA);
+
+  form = {
+    number: '',
+    floor: 1,
+    meterId: '',
+    readingLayout: 'A' as ReadingLayout,
+  };
+
+  constructor() {
+    const a = this.data.apartment;
+    this.form.number = a.number;
+    this.form.floor = a.floor;
+    this.form.meterId = a.meterId;
+    this.form.readingLayout = a.readingLayout;
   }
 }

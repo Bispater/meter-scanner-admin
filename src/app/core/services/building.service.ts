@@ -1,6 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Building, Tower, Apartment } from '../models/building.model';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { Building, Tower, Apartment, ReadingLayout } from '../models/building.model';
 import { environment } from '../../../environments/environment';
 import { NotificationService } from './notification.service';
 
@@ -10,6 +12,7 @@ interface ApiApartment {
   floor: number;
   meter_id: string;
   qr_code: string;
+  reading_layout: string;
   tower: number;
 }
 
@@ -161,26 +164,39 @@ export class BuildingService {
 
   // ── CRUD Apartments ──
 
-  addApartment(_buildingId: string, towerId: string, apt: Omit<Apartment, 'id'>): void {
-    const payload = { number: apt.number, floor: apt.floor, meter_id: apt.meterId, tower: Number(towerId) };
+  addApartment(_buildingId: string, towerId: string, apt: Omit<Apartment, 'id'>): Observable<unknown> {
+    const payload = {
+      number: apt.number,
+      floor: apt.floor,
+      meter_id: apt.meterId,
+      reading_layout: apt.readingLayout,
+      tower: Number(towerId),
+    };
     console.log('[BUILDINGS] POST /apartments/', payload);
-    this.http.post(`${this.url}/apartments/`, payload).subscribe({
-      next: res => {
-        console.log('[BUILDINGS] Apartment created:', res);
-        this.notify.success(`Depto "${apt.number}" creado`);
-        this.loadAll();
-      },
-      error: err => {
-        console.error('[BUILDINGS] Apartment create error:', err);
-        this.notify.error('Error al crear departamento');
-      },
-    });
+    return this.http.post(`${this.url}/apartments/`, payload).pipe(
+      tap({
+        next: res => {
+          console.log('[BUILDINGS] Apartment created:', res);
+          this.notify.success(`Depto "${apt.number}" creado`);
+          this.loadAll();
+        },
+        error: err => {
+          console.error('[BUILDINGS] Apartment create error:', err);
+          this.notify.error('Error al crear departamento');
+        },
+      }),
+    );
   }
 
   bulkAddApartments(towerId: string, apts: Omit<Apartment, 'id'>[]): Promise<number> {
     const payload = {
       tower: Number(towerId),
-      apartments: apts.map(a => ({ number: a.number, floor: a.floor, meter_id: a.meterId })),
+      apartments: apts.map(a => ({
+        number: a.number,
+        floor: a.floor,
+        meter_id: a.meterId,
+        reading_layout: a.readingLayout,
+      })),
     };
     console.log('[BUILDINGS] POST /apartments/bulk-create', payload.apartments.length, 'items');
     return new Promise((resolve, reject) => {
@@ -240,18 +256,44 @@ export class BuildingService {
     return {
       id: String(t.id),
       name: t.name,
-      apartments: (t.apartments || []).map(a => this._mapApartment(a)),
+      apartments: (t.apartments || []).map(a => this._mapApartment(a, t.name)),
     };
   }
 
-  private _mapApartment(a: ApiApartment): Apartment {
-    const towerShort = (a as any)._towerName ? ((a as any)._towerName as string).replace(/^[Tt]orre\s+/, '').trim() : '';
+  private _mapApartment(a: ApiApartment, towerName?: string): Apartment {
+    const towerShort = towerName
+      ? towerName.replace(/^[Tt]orre\s+/, '').trim()
+      : ((a as any)._towerName as string | undefined)?.replace(/^[Tt]orre\s+/, '').trim() ?? '';
+    const layout = a.reading_layout === 'B' ? 'B' : 'A';
     return {
       id: String(a.id),
       number: a.number,
       floor: a.floor,
       meterId: a.meter_id ?? '',
+      readingLayout: layout as ReadingLayout,
       qrCode: a.qr_code || `${a.number}${towerShort}`,
     };
+  }
+
+  updateApartment(
+    aptId: string,
+    patch: Partial<Pick<Apartment, 'number' | 'meterId' | 'readingLayout'>>,
+  ): void {
+    const body: { number?: string; meter_id?: string; reading_layout?: string } = {};
+    if (patch.number !== undefined) body.number = patch.number;
+    if (patch.meterId !== undefined) body.meter_id = patch.meterId;
+    if (patch.readingLayout !== undefined) body.reading_layout = patch.readingLayout;
+    console.log('[BUILDINGS] PATCH /apartments/' + aptId, body);
+    this.http.patch(`${this.url}/apartments/${aptId}/`, body).subscribe({
+      next: res => {
+        console.log('[BUILDINGS] Apartment updated:', res);
+        this.notify.success('Departamento actualizado');
+        this.loadAll();
+      },
+      error: err => {
+        console.error('[BUILDINGS] Apartment update error:', err);
+        this.notify.error('Error al actualizar departamento');
+      },
+    });
   }
 }

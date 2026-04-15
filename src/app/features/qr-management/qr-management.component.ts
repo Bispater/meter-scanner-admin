@@ -145,7 +145,7 @@ import { BuildingService } from '../../core/services/building.service';
                         } @else {
                           <button mat-stroked-button
                                   class="!border-cyan-500/40 !text-cyan-400 !text-xs !h-7 !px-3"
-                                  (click)="generateForApt(t.tower.name, row.apt.number, row.apt.meterId || '')">
+                                  (click)="generateForApt(t.tower.name, row.apt.number, row.apt.meterId || '', row.apt.readingLayout, +row.apt.id)">
                             <mat-icon style="font-size:14px;width:14px;height:14px;">qr_code_2</mat-icon>
                             Generar
                           </button>
@@ -210,8 +210,14 @@ export class QrManagementComponent implements OnInit {
     this.qrService.init();
   }
 
-  async generateForApt(towerName: string, aptNumber: string, meterId: string): Promise<void> {
-    await this.qrService.addQr(towerName, aptNumber, meterId);
+  async generateForApt(
+    towerName: string,
+    aptNumber: string,
+    meterId: string,
+    meterType: 'A' | 'B' = 'A',
+    apartmentId?: number,
+  ): Promise<void> {
+    await this.qrService.addQr(towerName, aptNumber, meterId, meterType, apartmentId);
   }
 
   async generateAllMissing(): Promise<void> {
@@ -221,7 +227,7 @@ export class QrManagementComponent implements OnInit {
       for (const t of b.towers) {
         for (const a of t.apartments) {
           if (!codesWithQr.has(a.qrCode ?? '')) {
-            await this.qrService.addQr(t.name, a.number, a.meterId);
+            await this.qrService.addQr(t.name, a.number, a.meterId, a.readingLayout, +a.id);
           }
         }
       }

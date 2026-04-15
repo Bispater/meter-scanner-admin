@@ -3,7 +3,7 @@ import { MeasurementCycle, CycleProgressResponse } from '../models/cycle.model';
 
 // ── Private API shapes (mirrors what each service expects from the real backend) ──
 
-interface ApiApt     { id: number; number: string; floor: number; meter_id: string; tower: number; }
+interface ApiApt     { id: number; number: string; floor: number; meter_id: string; tower: number; reading_layout: string; }
 interface ApiTower   { id: number; name: string; building: number; apartments: ApiApt[]; apartment_count: number; }
 interface ApiBuilding { id: number; name: string; address: string; created_at: string; towers: ApiTower[]; tower_count: number; apartment_count: number; }
 interface ApiUser    { id: number; username: string; email: string; first_name: string; last_name: string; phone: string; role: string; is_active: boolean; date_joined: string; assigned_apartment_ids: number[]; }
@@ -12,8 +12,8 @@ interface ApiPage<T> { count: number; results: T[]; }
 
 // ── Seed helpers ──
 
-function apt(id: number, number: string, floor: number, meter_id: string, tower: number): ApiApt {
-  return { id, number, floor, meter_id, tower };
+function apt(id: number, number: string, floor: number, meter_id: string, tower: number, reading_layout: 'A' | 'B' = 'A'): ApiApt {
+  return { id, number, floor, meter_id, tower, reading_layout };
 }
 
 function tower(id: number, name: string, building: number, apts: ApiApt[]): ApiTower {
@@ -190,11 +190,18 @@ export class DemoStoreService {
 
   // ── Apartments ───────────────────────────────────────────────────────────
 
-  createApartment(body: { number: string; floor: number; meter_id: string; tower: number }): ApiApt | null {
+  createApartment(body: {
+    number: string;
+    floor: number;
+    meter_id: string;
+    tower: number;
+    reading_layout?: string;
+  }): ApiApt | null {
     for (const b of this._buildings) {
       const t = b.towers.find(x => x.id === body.tower);
       if (t) {
-        const a = apt(this._nextAId++, body.number, body.floor, body.meter_id, body.tower);
+        const rl: 'A' | 'B' = body.reading_layout === 'B' ? 'B' : 'A';
+        const a = apt(this._nextAId++, body.number, body.floor, body.meter_id, body.tower, rl);
         t.apartments.push(a);
         t.apartment_count = t.apartments.length;
         b.apartment_count = b.towers.reduce((s, tt) => s + tt.apartments.length, 0);
@@ -202,6 +209,45 @@ export class DemoStoreService {
       }
     }
     return null;
+  }
+
+  updateApartment(
+    id: string,
+    body: Partial<{ number: string; floor: number; meter_id: string; reading_layout: string }>,
+  ): ApiApt | null {
+    for (const b of this._buildings) {
+      for (const t of b.towers) {
+        const a = t.apartments.find(x => x.id === Number(id));
+        if (a) {
+          if (body.number !== undefined) a.number = body.number;
+          if (body.floor !== undefined) a.floor = body.floor;
+          if (body.meter_id !== undefined) a.meter_id = body.meter_id;
+          if (body.reading_layout !== undefined) {
+            a.reading_layout = body.reading_layout === 'B' ? 'B' : 'A';
+          }
+          return a;
+        }
+      }
+    }
+    return null;
+  }
+
+  bulkCreateApartments(body: {
+    tower: number;
+    apartments: { number: string; floor: number; meter_id: string; reading_layout?: string }[];
+  }): { created: number; apartments: ApiApt[] } {
+    const created: ApiApt[] = [];
+    for (const item of body.apartments) {
+      const a = this.createApartment({
+        number: item.number,
+        floor: item.floor,
+        meter_id: item.meter_id,
+        tower: body.tower,
+        reading_layout: item.reading_layout,
+      });
+      if (a) created.push(a);
+    }
+    return { created: created.length, apartments: created };
   }
 
   deleteApartment(id: string): void {

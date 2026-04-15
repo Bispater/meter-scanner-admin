@@ -65,11 +65,15 @@ export const demoInterceptor: HttpInterceptorFn = (req, next) => {
     if (tid  && method === 'DELETE') { store.deleteTower(tid); return ok(null, 204); }
   }
 
-  // ── /buildings/apartments/{id}/ ───────────────────────────────────────
+  // ── /buildings/apartments/ ────────────────────────────────────────────
   if (url.includes('/buildings/apartments/')) {
+    if (url.includes('/bulk-create') && method === 'POST') {
+      return ok(store.bulkCreateApartments(body));
+    }
     const aid = id(url, /\/apartments\/(\d+)\//);
     if (!aid && method === 'POST') return ok(store.createApartment(body));
-    if (aid  && method === 'DELETE') { store.deleteApartment(aid); return ok(null, 204); }
+    if (aid && method === 'PATCH') return ok(store.updateApartment(aid, body));
+    if (aid && method === 'DELETE') { store.deleteApartment(aid); return ok(null, 204); }
   }
 
   // ── /measurements/{id}/ ───────────────────────────────────────────────

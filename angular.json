@@ -51,6 +51,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/app/assets/meter-types",
+                "output": "/assets/meter-types"
               }
             ],
             "styles": [
@@ -110,6 +115,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/app/assets/meter-types",
+                "output": "/assets/meter-types"
               }
             ],
             "styles": [
