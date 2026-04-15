@@ -10,6 +10,7 @@ export interface SessionUser {
   username: string;
   displayName: string;
   role: string;
+  isSuperuser: boolean;
   organizationId: number | null;
   organizationName: string | null;
 }
@@ -28,6 +29,7 @@ interface MeResponse {
   phone: string;
   role: string;
   is_active: boolean;
+  is_superuser: boolean;
   organization_id: number | null;
   organization_name: string | null;
 }
@@ -41,11 +43,20 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly isAuthenticated = computed(() => this._user() !== null);
   readonly isAdmin = computed(() => this._user()?.role === 'admin');
+  readonly isSuperAdmin = computed(() => this._user()?.isSuperuser === true);
 
   async login(username: string, password: string, isDemoLogin = false): Promise<boolean> {
     if (isDemoLogin && username === 'admin' && password === 'admin') {
       this.demoMode.activate();
-      const session: SessionUser = { id: 'demo-1', username: 'admin', displayName: 'Admin Demo', role: 'admin', organizationId: null, organizationName: 'Demo' };
+      const session: SessionUser = {
+        id: 'demo-1',
+        username: 'admin',
+        displayName: 'Admin Demo',
+        role: 'admin',
+        isSuperuser: true,
+        organizationId: null,
+        organizationName: 'Demo',
+      };
       this._user.set(session);
       sessionStorage.setItem('metscan_user', JSON.stringify(session));
       sessionStorage.setItem('metscan_access_token', 'DEMO_ACCESS_TOKEN');
@@ -76,6 +87,7 @@ export class AuthService {
         username: me.username,
         displayName: `${me.first_name} ${me.last_name}`.trim() || me.username,
         role: me.role,
+        isSuperuser: me.is_superuser === true,
         organizationId: me.organization_id ?? null,
         organizationName: me.organization_name ?? null,
       };

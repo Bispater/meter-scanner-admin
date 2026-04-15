@@ -24,7 +24,7 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
 
       <!-- Photo -->
       <div class="px-6 pt-5">
-        <div class="w-full h-56 rounded-xl bg-slate-700 overflow-hidden flex items-center justify-center border border-slate-600 cursor-zoom-in relative group"
+        <div class="w-full h-72 rounded-xl bg-slate-700 overflow-hidden flex items-center justify-center border border-slate-600 cursor-zoom-in relative group"
              (click)="openFullScreen()">
           <img [src]="data.photo_url" alt="Foto del medidor" class="w-full h-full object-cover"
             (error)="onImageError($event)" />
@@ -32,6 +32,14 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             <mat-icon class="text-white opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:36px;width:36px;height:36px;">zoom_in</mat-icon>
           </div>
         </div>
+        @if (data.photo_url) {
+          <div class="flex justify-end mt-2">
+            <button mat-stroked-button class="!border-slate-600 !text-slate-300" (click)="openFullScreen()">
+              <mat-icon>open_in_full</mat-icon>
+              Ver foto en grande
+            </button>
+          </div>
+        }
       </div>
 
       <!-- Details Grid -->

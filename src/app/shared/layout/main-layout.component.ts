@@ -41,7 +41,7 @@ import { OrganizationService } from '../../core/services/organization.service';
 
         <!-- Nav Items -->
         <nav class="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          @for (item of navItems; track item.route) {
+          @for (item of navItems(); track item.route) {
             <a
               [routerLink]="item.route"
               routerLinkActive="bg-cyan-500/15 text-cyan-400 border-l-cyan-400"
@@ -122,18 +122,25 @@ export class MainLayoutComponent implements OnInit {
     this.userService.loadAll();
     this.measurementService.loadAll();
     this.cycleService.loadAll();
-    this.organizationService.loadAll();
+    if (this.authService.isSuperAdmin()) {
+      this.organizationService.loadAll();
+    }
   }
 
-  readonly navItems = [
-    { route: '/app/dashboard', icon: 'dashboard', label: 'Dashboard' },
-    { route: '/app/buildings', icon: 'domain', label: 'Edificios' },
-    { route: '/app/users', icon: 'people', label: 'Usuarios' },
-    { route: '/app/cycles', icon: 'event_repeat', label: 'Ciclos' },
-    { route: '/app/measurements', icon: 'speed', label: 'Mediciones' },
-    { route: '/app/qr-management', icon: 'qr_code_2', label: 'Gestión de QRs' },
-    { route: '/app/organizations', icon: 'corporate_fare', label: 'Organizaciones' },
-  ];
+  readonly navItems = () => {
+    const base = [
+      { route: '/app/dashboard', icon: 'dashboard', label: 'Dashboard' },
+      { route: '/app/buildings', icon: 'domain', label: 'Edificios' },
+      { route: '/app/users', icon: 'people', label: 'Usuarios' },
+      { route: '/app/cycles', icon: 'event_repeat', label: 'Ciclos' },
+      { route: '/app/measurements', icon: 'speed', label: 'Mediciones' },
+      { route: '/app/qr-management', icon: 'qr_code_2', label: 'Gestión de QRs' },
+    ];
+    if (this.authService.isSuperAdmin()) {
+      base.push({ route: '/app/organizations', icon: 'corporate_fare', label: 'Organizaciones' });
+    }
+    return base;
+  };
 
   onLogout(): void {
     this.authService.logout();

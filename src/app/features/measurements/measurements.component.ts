@@ -130,11 +130,22 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             <ng-container matColumnDef="photo">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Foto</th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !text-slate-200 !border-b-slate-700/50">
-                <div class="w-10 h-10 rounded-lg bg-slate-700 overflow-hidden cursor-zoom-in hover:ring-2 hover:ring-cyan-400 transition-all"
-                     (click)="openImage($event, row)">
-                  <img [src]="row.photo_url" alt="" class="w-full h-full object-cover"
-                    (error)="onImageError($event)" />
-                </div>
+                @if (row.photo_url) {
+                  <button type="button"
+                          class="group relative w-10 h-10 rounded-lg bg-slate-700 overflow-hidden cursor-zoom-in hover:ring-2 hover:ring-cyan-400 transition-all"
+                          (click)="openImage($event, row)"
+                          matTooltip="Ver foto en grande">
+                    <img [src]="row.photo_url" alt="Foto medición {{ row.meter_id }}" class="w-full h-full object-cover" />
+                    <span class="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors"></span>
+                    <mat-icon class="!absolute !inset-0 m-auto text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                              style="font-size:16px;width:16px;height:16px;">zoom_in</mat-icon>
+                  </button>
+                } @else {
+                  <div class="w-10 h-10 rounded-lg bg-slate-700/70 border border-slate-600 flex items-center justify-center"
+                       matTooltip="Sin foto">
+                    <mat-icon class="text-slate-500" style="font-size:16px;width:16px;height:16px;">no_photography</mat-icon>
+                  </div>
+                }
               </td>
             </ng-container>
 
@@ -204,6 +215,12 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700"></th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !border-b-slate-700/50">
+                @if (row.photo_url) {
+                  <button mat-icon-button class="!text-slate-400 hover:!text-indigo-300"
+                          (click)="openImage($event, row)" matTooltip="Abrir foto">
+                    <mat-icon style="font-size:18px;width:18px;height:18px;">zoom_in</mat-icon>
+                  </button>
+                }
                 <button mat-icon-button class="!text-slate-400 hover:!text-cyan-400" (click)="openDetail(row)" matTooltip="Ver detalle">
                   <mat-icon style="font-size:18px;width:18px;height:18px;">visibility</mat-icon>
                 </button>
@@ -356,8 +373,8 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     const ref = this.dialog.open(MeasurementDetailDialogComponent, {
       data: measurement,
       panelClass: 'custom-dialog',
-      maxWidth: '600px',
-      width: '95vw',
+      maxWidth: '900px',
+      width: '96vw',
     });
     ref.afterClosed().subscribe(result => {
       setTimeout(() => { this._dialogOpen = false; }, 400);
@@ -387,12 +404,6 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
       // Update local filtered data after a short delay
       setTimeout(() => this.applyFilters(), 300);
     }
-  }
-
-  onImageError(event: Event): void {
-    const img = event.target as HTMLImageElement;
-    img.style.display = 'none';
-    img.parentElement!.innerHTML = '<span class="text-slate-500 text-xs">N/A</span>';
   }
 
   timeAgo(dateStr: string): string {

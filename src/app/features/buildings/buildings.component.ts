@@ -338,6 +338,12 @@ export class BuildingsComponent {
                 <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo B</span>
               </button>
             </div>
+            <button mat-stroked-button type="button"
+                    class="!mt-2 !border-slate-600 !text-slate-300"
+                    (click)="openTypePreview(form.readingLayout)">
+              <mat-icon>zoom_in</mat-icon>
+              Ver imagen en grande
+            </button>
           </div>
         }
       }
@@ -358,6 +364,7 @@ export class BuildingFormDialogComponent {
     buildingName?: string;
     towerName?: string;
   }>(MAT_DIALOG_DATA);
+  private readonly dialog = inject(MatDialog);
 
   form: any = {
     name: '',
@@ -374,6 +381,14 @@ export class BuildingFormDialogComponent {
       case 'tower': return !!this.form.name;
       case 'apartment': return !!(this.form.number && this.form.meterId && this.form.readingLayout);
     }
+  }
+
+  openTypePreview(type: ReadingLayout): void {
+    this.dialog.open(MeterTypePreviewDialogComponent, {
+      width: 'min(95vw, 720px)',
+      panelClass: 'dark-dialog',
+      data: { type },
+    });
   }
 }
 
@@ -444,6 +459,12 @@ interface PreviewApt {
             <span class="mt-1 text-xs font-medium text-center text-slate-200">Tipo B</span>
           </button>
         </div>
+        <button mat-stroked-button type="button"
+                class="!mt-2 !border-slate-600 !text-slate-300"
+                (click)="openTypePreview(bulkReadingLayout)">
+          <mat-icon>zoom_in</mat-icon>
+          Ver imagen en grande
+        </button>
         <p class="text-slate-500 text-xs leading-relaxed mt-2">
           Por defecto todos quedan en <span class="text-slate-300">Tipo A</span>.
           Podrás cambiar el tipo de cada departamento individualmente después (icono editar en la lista de deptos).
@@ -503,6 +524,7 @@ interface PreviewApt {
 export class BulkApartmentDialogComponent {
   readonly data = inject<{ buildingName: string; towerName: string }>(MAT_DIALOG_DATA);
   private readonly dialogRef = inject(MatDialogRef<BulkApartmentDialogComponent>);
+  private readonly dialog = inject(MatDialog);
 
   // Config
   floorFrom = 1;
@@ -631,6 +653,14 @@ export class BulkApartmentDialogComponent {
     this.regeneratePreview();
   }
 
+  openTypePreview(type: ReadingLayout): void {
+    this.dialog.open(MeterTypePreviewDialogComponent, {
+      width: 'min(95vw, 720px)',
+      panelClass: 'dark-dialog',
+      data: { type },
+    });
+  }
+
   confirm(): void {
     this.dialogRef.close(
       this.preview().map(a => ({
@@ -690,6 +720,12 @@ export class BulkApartmentDialogComponent {
             <span class="mt-2 text-sm font-medium text-center text-slate-200">Tipo B</span>
           </button>
         </div>
+        <button mat-stroked-button type="button"
+                class="!mt-2 !border-slate-600 !text-slate-300"
+                (click)="openTypePreview(form.readingLayout)">
+          <mat-icon>zoom_in</mat-icon>
+          Ver imagen en grande
+        </button>
       </div>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
@@ -706,6 +742,7 @@ export class EditApartmentDialogComponent {
     towerName: string;
     buildingName: string;
   }>(MAT_DIALOG_DATA);
+  private readonly dialog = inject(MatDialog);
 
   form = {
     number: '',
@@ -721,4 +758,37 @@ export class EditApartmentDialogComponent {
     this.form.meterId = a.meterId;
     this.form.readingLayout = a.readingLayout;
   }
+
+  openTypePreview(type: ReadingLayout): void {
+    this.dialog.open(MeterTypePreviewDialogComponent, {
+      width: 'min(95vw, 720px)',
+      panelClass: 'dark-dialog',
+      data: { type },
+    });
+  }
+}
+
+/* ─── Meter type image preview dialog ─── */
+@Component({
+  selector: 'app-meter-type-preview-dialog',
+  standalone: true,
+  imports: [MatDialogModule, MatButtonModule, MatIconModule],
+  template: `
+    <h2 mat-dialog-title class="!text-white">
+      Referencia visual — {{ data.type === 'B' ? 'Tipo B' : 'Tipo A' }}
+    </h2>
+    <mat-dialog-content class="!pt-2">
+      <img
+        [src]="data.type === 'B' ? 'assets/meter-types/type_B.png' : 'assets/meter-types/type_A.png'"
+        [alt]="data.type === 'B' ? 'Medidor tipo B' : 'Medidor tipo A'"
+        class="w-full max-h-[70vh] object-contain rounded-xl bg-slate-900/40 p-2"
+      />
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-stroked-button mat-dialog-close class="!border-slate-600 !text-slate-300">Cerrar</button>
+    </mat-dialog-actions>
+  `,
+})
+export class MeterTypePreviewDialogComponent {
+  readonly data = inject<{ type: ReadingLayout }>(MAT_DIALOG_DATA);
 }

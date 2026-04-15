@@ -284,11 +284,32 @@ export class BuildingService {
     if (patch.meterId !== undefined) body.meter_id = patch.meterId;
     if (patch.readingLayout !== undefined) body.reading_layout = patch.readingLayout;
     console.log('[BUILDINGS] PATCH /apartments/' + aptId, body);
-    this.http.patch(`${this.url}/apartments/${aptId}/`, body).subscribe({
+    this.http.patch<{ reading_layout?: string }>(`${this.url}/apartments/${aptId}/`, body).subscribe({
       next: res => {
         console.log('[BUILDINGS] Apartment updated:', res);
         this.notify.success('Departamento actualizado');
-        this.loadAll();
+        // Update local state immediately so UI reflects the selected type
+        this._buildings.update(buildings =>
+          buildings.map(b => ({
+            ...b,
+            towers: b.towers.map(t => ({
+              ...t,
+              apartments: t.apartments.map(a => {
+                if (a.id !== aptId) return a;
+                return {
+                  ...a,
+                  number: patch.number ?? a.number,
+                  meterId: patch.meterId ?? a.meterId,
+                  readingLayout: (patch.readingLayout ?? a.readingLayout) as ReadingLayout,
+                };
+              }),
+            })),
+          })),
+        );
+        // If backend echoes a different value, warn the user (backend likely outdated).
+        if (patch.readingLayout && res?.reading_layout && res.reading_layout !== patch.readingLayout) {
+          this.notify.info('El backend respondió un tipo distinto; revisa que esté actualizado con reading_layout.');
+        }
       },
       error: err => {
         console.error('[BUILDINGS] Apartment update error:', err);
