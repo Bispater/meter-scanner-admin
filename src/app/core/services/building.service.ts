@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Building, Tower, Apartment, ReadingLayout } from '../models/building.model';
@@ -124,7 +124,7 @@ export class BuildingService {
       },
       error: err => {
         console.error('[BUILDINGS] Delete error:', err);
-        this.notify.error('Error al eliminar edificio');
+        this.notify.error(this._extractErrorMessage(err, 'Error al eliminar edificio'));
       },
     });
   }
@@ -157,7 +157,7 @@ export class BuildingService {
       },
       error: err => {
         console.error('[BUILDINGS] Tower delete error:', err);
-        this.notify.error('Error al eliminar torre');
+        this.notify.error(this._extractErrorMessage(err, 'Error al eliminar torre'));
       },
     });
   }
@@ -226,9 +226,24 @@ export class BuildingService {
       },
       error: err => {
         console.error('[BUILDINGS] Apartment delete error:', err);
-        this.notify.error('Error al eliminar departamento');
+        this.notify.error(this._extractErrorMessage(err, 'Error al eliminar departamento'));
       },
     });
+  }
+
+  private _extractErrorMessage(err: unknown, fallback: string): string {
+    if (err instanceof HttpErrorResponse) {
+      const payload = err.error;
+      if (typeof payload === 'string' && payload.trim()) return payload;
+      if (payload && typeof payload === 'object') {
+        if (typeof payload.error === 'string' && payload.error.trim()) return payload.error;
+        if (typeof payload.detail === 'string' && payload.detail.trim()) return payload.detail;
+      }
+      if (err.status === 409) {
+        return 'No se puede eliminar porque existen datos históricos asociados.';
+      }
+    }
+    return fallback;
   }
 
   // ── Lookups ──

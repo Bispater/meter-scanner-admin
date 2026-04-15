@@ -177,7 +177,7 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             <ng-container matColumnDef="reading_value">
               <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Lectura (m³)</th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !border-b-slate-700/50">
-                <span class="text-cyan-400 font-bold">{{ row.reading_value }}</span>
+                <span class="text-cyan-400 font-bold">{{ formatMeterReading(row.reading_value) }}</span>
                 <span class="text-slate-500 text-xs ml-1">m³</span>
               </td>
             </ng-container>
@@ -421,5 +421,13 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     const months = Math.floor(days / 30);
     if (months === 1) return '1 mes';
     return `${months} meses`;
+  }
+
+  formatMeterReading(raw: number | string): string {
+    const integerDigits = String(raw).split('.')[0].replace(/\D/g, '');
+    if (!integerDigits) return String(raw);
+    const right = integerDigits.slice(-4).padStart(4, '0');
+    const left = integerDigits.slice(0, -4).padStart(5, '0');
+    return `${left},${right}`;
   }
 }

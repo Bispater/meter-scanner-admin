@@ -84,7 +84,7 @@ import { Building, Tower, Apartment, ReadingLayout } from '../../core/models/bui
               <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-cyan-400 hover:bg-cyan-400/10 transition-colors" (click)="openAddTower(building)">
                 <mat-icon style="font-size:20px;width:20px;height:20px;line-height:1;">add</mat-icon>
               </button>
-              <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="deleteBuilding(building)">
+              <button type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="requestDeleteBuilding(building)">
                 <mat-icon style="font-size:18px;width:18px;height:18px;line-height:1;">delete_outline</mat-icon>
               </button>
             </div>
@@ -107,7 +107,7 @@ import { Building, Tower, Apartment, ReadingLayout } from '../../core/models/bui
                   <button type="button" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-cyan-400 hover:bg-cyan-400/10 transition-colors" (click)="openAddApartment(building, tower)">
                     <mat-icon style="font-size:18px;width:18px;height:18px;line-height:1;">add</mat-icon>
                   </button>
-                  <button type="button" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="deleteTower(building, tower)">
+                  <button type="button" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors" (click)="requestDeleteTower(building, tower)">
                     <mat-icon style="font-size:16px;width:16px;height:16px;line-height:1;">delete_outline</mat-icon>
                   </button>
                 </div>
@@ -132,7 +132,7 @@ import { Building, Tower, Apartment, ReadingLayout } from '../../core/models/bui
                         <mat-icon style="font-size:14px;width:14px;height:14px;">edit</mat-icon>
                       </button>
                       <button type="button" class="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                              (click)="deleteApartment(building, tower, apt)">
+                              (click)="requestDeleteApartment(building, tower, apt)">
                         <mat-icon style="font-size:14px;width:14px;height:14px;">close</mat-icon>
                       </button>
                     </div>
@@ -185,6 +185,51 @@ export class BuildingsComponent {
 
   deleteApartment(building: Building, tower: Tower, apt: Apartment): void {
     this.buildingService.deleteApartment(building.id, tower.id, apt.id);
+  }
+
+  requestDeleteBuilding(building: Building): void {
+    const ref = this.dialog.open(DeleteConfirmDialogComponent, {
+      width: '420px',
+      panelClass: 'dark-dialog',
+      data: {
+        title: 'Eliminar edificio',
+        message: `¿Seguro que quieres eliminar "${building.name}"? Esta acción elimina torres y departamentos.`,
+        confirmText: 'Eliminar edificio',
+      },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (confirmed) this.deleteBuilding(building);
+    });
+  }
+
+  requestDeleteTower(building: Building, tower: Tower): void {
+    const ref = this.dialog.open(DeleteConfirmDialogComponent, {
+      width: '420px',
+      panelClass: 'dark-dialog',
+      data: {
+        title: 'Eliminar torre',
+        message: `¿Seguro que quieres eliminar "${tower.name}"? Se eliminarán sus departamentos.`,
+        confirmText: 'Eliminar torre',
+      },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (confirmed) this.deleteTower(building, tower);
+    });
+  }
+
+  requestDeleteApartment(building: Building, tower: Tower, apt: Apartment): void {
+    const ref = this.dialog.open(DeleteConfirmDialogComponent, {
+      width: '420px',
+      panelClass: 'dark-dialog',
+      data: {
+        title: 'Eliminar departamento',
+        message: `¿Seguro que quieres eliminar el departamento ${apt.number}?`,
+        confirmText: 'Eliminar departamento',
+      },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (confirmed) this.deleteApartment(building, tower, apt);
+    });
   }
 
   openAddBuilding(): void {
@@ -791,4 +836,29 @@ export class EditApartmentDialogComponent {
 })
 export class MeterTypePreviewDialogComponent {
   readonly data = inject<{ type: ReadingLayout }>(MAT_DIALOG_DATA);
+}
+
+/* ─── Delete confirm dialog ─── */
+@Component({
+  selector: 'app-delete-confirm-dialog',
+  standalone: true,
+  imports: [MatDialogModule, MatButtonModule, MatIconModule],
+  template: `
+    <h2 mat-dialog-title class="!text-white flex items-center gap-2">
+      <mat-icon class="text-red-400">warning</mat-icon>
+      {{ data.title || 'Confirmar eliminación' }}
+    </h2>
+    <mat-dialog-content class="!pt-2">
+      <p class="text-slate-300 text-sm">{{ data.message }}</p>
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
+      <button mat-flat-button class="!bg-red-600 !text-white" [mat-dialog-close]="true">
+        {{ data.confirmText || 'Eliminar' }}
+      </button>
+    </mat-dialog-actions>
+  `,
+})
+export class DeleteConfirmDialogComponent {
+  readonly data = inject<{ title?: string; message: string; confirmText?: string }>(MAT_DIALOG_DATA);
 }

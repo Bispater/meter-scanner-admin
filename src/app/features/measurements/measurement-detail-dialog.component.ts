@@ -63,7 +63,7 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
           </div>
           <div>
             <p class="text-xs text-slate-400 mb-1">Lectura</p>
-            <p class="text-xl font-bold text-cyan-400">{{ data.reading_value }} {{ data.unit }}</p>
+            <p class="text-xl font-bold text-cyan-400">{{ formatMeterReading(data.reading_value) }} {{ data.unit }}</p>
           </div>
           <div>
             <p class="text-xs text-slate-400 mb-1">Estado</p>
@@ -176,5 +176,13 @@ export class MeasurementDetailDialogComponent {
         <span class="text-sm mt-2">Sin foto</span>
       </div>
     `;
+  }
+
+  formatMeterReading(raw: number | string): string {
+    const integerDigits = String(raw).split('.')[0].replace(/\D/g, '');
+    if (!integerDigits) return String(raw);
+    const right = integerDigits.slice(-4).padStart(4, '0');
+    const left = integerDigits.slice(0, -4).padStart(5, '0');
+    return `${left},${right}`;
   }
 }
