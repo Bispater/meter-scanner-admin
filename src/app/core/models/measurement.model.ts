@@ -16,6 +16,9 @@ export interface Measurement {
   status: 'verified' | 'pending_review' | 'rejected';
   meter_type: 'analog' | 'digital_drum' | 'digital';
   location_coords: LocationCoords;
+  /** Solo en papelera (API) */
+  deleted_at?: string;
+  retention_days_remaining?: number;
 }
 
 export interface Summary {

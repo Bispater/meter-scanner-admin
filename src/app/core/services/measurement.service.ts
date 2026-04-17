@@ -23,6 +23,8 @@ interface ApiMeasurement {
   apartment_number: string;
   meter_id: string;
   operator_name: string | null;
+  deleted_at?: string | null;
+  retention_days_remaining?: number | null;
 }
 
 interface ApiPage<T> { count: number; results: T[]; }
@@ -34,9 +36,11 @@ export class MeasurementService {
   private readonly url = `${environment.apiUrl}/measurements`;
 
   private readonly _measurements = signal<Measurement[]>([]);
+  private readonly _trash = signal<Measurement[]>([]);
   private readonly _summary = signal<Summary>({ total_readings_today: 0, pending_alerts: 0, total_consumption_m3: 0 });
 
   readonly measurements = this._measurements.asReadonly();
+  readonly trash = this._trash.asReadonly();
   readonly summary = this._summary.asReadonly();
 
   readonly towers = computed(() => {
@@ -169,17 +173,58 @@ export class MeasurementService {
 
   deleteMeasurement(id: string): void {
     const endpoint = `${this.url}/${id}/`;
+    console.log('[MEASUREMENTS] DELETE (soft)', endpoint);
     this.http.delete(endpoint).subscribe({
       next: () => {
         const updated = this._measurements().filter(m => m.id !== id);
         this._measurements.set(updated);
         this._computeSummary(updated);
-        this.notify.success('Medición eliminada');
+        this.notify.success('Medición enviada a la papelera (30 días para recuperar)');
+        this.loadTrash();
       },
       error: err => {
         console.error('[MEASUREMENTS] Delete error:', err);
         this.notify.error('Error al eliminar medición');
       },
+    });
+  }
+
+  loadTrash(): void {
+    const endpoint = `${this.url}/trash/?page_size=500`;
+    console.log('[MEASUREMENTS] GET trash', endpoint);
+    this.http.get<ApiPage<ApiMeasurement> | ApiMeasurement[]>(endpoint).subscribe({
+      next: res => {
+        const rows = Array.isArray(res) ? res : res.results;
+        this._trash.set(rows.map(m => this._mapMeasurement(m)));
+      },
+      error: err => {
+        console.error('[MEASUREMENTS] Trash load error:', err);
+        this._trash.set([]);
+      },
+    });
+  }
+
+  restoreMeasurement(id: string): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/restore/`;
+    console.log('[MEASUREMENTS] POST restore', endpoint);
+    return new Promise(resolve => {
+      this.http.post<ApiMeasurement>(endpoint, {}).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          this._trash.set(this._trash().filter(m => m.id !== id));
+          const merged = [mapped, ...this._measurements().filter(m => m.id !== id)];
+          merged.sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
+          this._measurements.set(merged);
+          this._computeSummary(merged);
+          this.notify.success('Medición restaurada');
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Restore error:', err);
+          this.notify.error('No se pudo restaurar (¿expiró el plazo de 30 días?)');
+          resolve(null);
+        },
+      });
     });
   }
 
@@ -202,6 +247,8 @@ export class MeasurementService {
         lat: m.latitude ? parseFloat(m.latitude) : 0,
         lng: m.longitude ? parseFloat(m.longitude) : 0,
       },
+      deleted_at: m.deleted_at ?? undefined,
+      retention_days_remaining: m.retention_days_remaining ?? undefined,
     };
   }
 

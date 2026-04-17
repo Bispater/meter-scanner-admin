@@ -40,17 +40,35 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
   template: `
     <div class="space-y-5">
       <!-- Header -->
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-2xl font-bold text-white">Mediciones</h2>
           <p class="text-slate-400 text-sm mt-1">Historial completo de lecturas de medidores</p>
+          <p class="text-slate-500 text-xs mt-1 max-w-xl">
+            Las eliminadas permanecen en la papelera <strong class="text-slate-400">30 días</strong> y pueden recuperarse.
+          </p>
         </div>
-        <button mat-flat-button class="!bg-cyan-600 !text-white" (click)="refresh()" matTooltip="Actualizar datos">
-          <mat-icon>refresh</mat-icon> Actualizar
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button mat-stroked-button
+                  [class]="showTrash() ? '!border-slate-600 !text-slate-400' : '!border-cyan-500/50 !text-cyan-400'"
+                  class="cursor-pointer"
+                  (click)="setTrashMode(false)">
+            <mat-icon>list</mat-icon> Activas
+          </button>
+          <button mat-stroked-button
+                  [class]="showTrash() ? '!border-amber-500/50 !text-amber-400' : '!border-slate-600 !text-slate-400'"
+                  class="cursor-pointer"
+                  (click)="setTrashMode(true)">
+            <mat-icon>delete_outline</mat-icon> Papelera
+          </button>
+          <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="refresh()" matTooltip="Actualizar datos">
+            <mat-icon>refresh</mat-icon> Actualizar
+          </button>
+        </div>
       </div>
 
       <!-- Filters -->
+      @if (!showTrash()) {
       <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
         <div class="flex items-center gap-2 mb-4">
           <mat-icon class="text-slate-400" style="font-size:18px;width:18px;height:18px;">filter_list</mat-icon>
@@ -120,17 +138,27 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
           </button>
         }
       </div>
+      } @else {
+      <div class="bg-amber-500/10 rounded-xl border border-amber-500/25 p-4">
+        <p class="text-sm text-amber-200/90">
+          <mat-icon class="align-middle mr-1" style="font-size:18px;width:18px;height:18px;">info</mat-icon>
+          Solo administradores. Tras 30 días desde la eliminación, el registro se borra definitivamente del servidor (comando de mantenimiento).
+        </p>
+      </div>
+      }
 
       <!-- Results count -->
       <div class="flex items-center justify-between">
         <p class="text-sm text-slate-400">
-          {{ filteredData().length }} medición{{ filteredData().length !== 1 ? 'es' : '' }} encontrada{{ filteredData().length !== 1 ? 's' : '' }}
+          {{ displayData().length }} {{ displayData().length === 1 ? 'medición' : 'mediciones' }}
+          @if (showTrash()) { en papelera } @else { encontrada{{ displayData().length !== 1 ? 's' : '' }} }
         </p>
       </div>
 
       <!-- Table -->
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div class="overflow-x-auto">
+          @if (!showTrash()) {
           <table mat-table [dataSource]="paginatedData()" matSort (matSortChange)="onSort($event)"
                  class="w-full !bg-transparent">
 
@@ -243,17 +271,74 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
                 class="cursor-pointer hover:!bg-slate-700/40 transition-colors"
                 (click)="openDetail(row)"></tr>
           </table>
+          } @else {
+          <table mat-table [dataSource]="paginatedData()" class="w-full !bg-transparent">
+            <ng-container matColumnDef="photo">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Foto</th>
+              <td mat-cell *matCellDef="let row" class="!border-b-slate-700/50">
+                @if (row.photo_url) {
+                  <button type="button" class="w-10 h-10 rounded-lg overflow-hidden cursor-pointer"
+                          (click)="openImage($event, row)">
+                    <img [src]="row.photo_url" alt="" class="w-full h-full object-cover" />
+                  </button>
+                } @else { <span class="text-slate-600">—</span> }
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="tower">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Torre</th>
+              <td mat-cell *matCellDef="let row">{{ row.tower }}</td>
+            </ng-container>
+            <ng-container matColumnDef="apartment">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Depto</th>
+              <td mat-cell *matCellDef="let row">{{ row.apartment }}</td>
+            </ng-container>
+            <ng-container matColumnDef="meter_id">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Medidor</th>
+              <td mat-cell *matCellDef="let row"><span class="font-mono text-xs">{{ row.meter_id }}</span></td>
+            </ng-container>
+            <ng-container matColumnDef="reading_value">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Lectura</th>
+              <td mat-cell *matCellDef="let row" class="text-cyan-400 font-bold">{{ formatMeterReading(row.reading_value) }}</td>
+            </ng-container>
+            <ng-container matColumnDef="captured_at">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Captura</th>
+              <td mat-cell *matCellDef="let row" class="text-sm">{{ row.captured_at | date:'dd/MM/yyyy HH:mm' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="deleted_meta">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Eliminada</th>
+              <td mat-cell *matCellDef="let row" class="text-sm text-slate-400">
+                {{ row.deleted_at | date:'dd/MM/yyyy HH:mm' }}
+                @if (row.retention_days_remaining != null) {
+                  <span class="block text-xs text-amber-400/90">~{{ row.retention_days_remaining }} días para borrado total</span>
+                }
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="actions_trash">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs"></th>
+              <td mat-cell *matCellDef="let row">
+                <button mat-flat-button class="!bg-emerald-600 !text-white !text-xs cursor-pointer"
+                        (click)="restoreRow($event, row)">
+                  <mat-icon style="font-size:16px;width:16px;height:16px;">restore</mat-icon> Restaurar
+                </button>
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="trashColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: trashColumns;" class="hover:!bg-slate-700/30"></tr>
+          </table>
+          }
         </div>
 
-        @if (filteredData().length === 0) {
+        @if (displayData().length === 0) {
           <div class="py-16 text-center">
             <mat-icon class="text-slate-600" style="font-size:48px;width:48px;height:48px;">search_off</mat-icon>
-            <p class="text-slate-400 mt-3">No se encontraron mediciones con los filtros aplicados.</p>
+            <p class="text-slate-400 mt-3">
+              @if (showTrash()) { La papelera está vacía. } @else { No se encontraron mediciones con los filtros aplicados. }
+            </p>
           </div>
         }
 
         <mat-paginator
-          [length]="filteredData().length"
+          [length]="displayData().length"
           [pageSize]="pageSize()"
           [pageSizeOptions]="[5, 10, 25]"
           (page)="onPageChange($event)"
@@ -301,10 +386,17 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterDateToObj: Date | null = null;
 
   readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'time_ago', 'status', 'actions'];
+  readonly trashColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'deleted_meta', 'actions_trash'];
+
+  readonly showTrash = signal(false);
 
   readonly filteredData = signal<Measurement[]>([]);
   readonly pageSize = signal(10);
   readonly pageIndex = signal(0);
+
+  readonly displayData = computed(() =>
+    this.showTrash() ? this.measurementService.trash() : this.filteredData()
+  );
 
   ngOnInit(): void {
     const today = new Date();
@@ -327,11 +419,26 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
 
   refresh(): void {
     this.measurementService.loadAll();
+    this.measurementService.loadTrash();
+  }
+
+  setTrashMode(v: boolean): void {
+    this.showTrash.set(v);
+    this.pageIndex.set(0);
+    if (v) {
+      this.measurementService.loadTrash();
+    }
+  }
+
+  restoreRow(event: Event, row: Measurement): void {
+    event.stopPropagation();
+    void this.measurementService.restoreMeasurement(row.id);
   }
 
   readonly paginatedData = computed(() => {
+    const data = this.displayData();
     const start = this.pageIndex() * this.pageSize();
-    return this.filteredData().slice(start, start + this.pageSize());
+    return data.slice(start, start + this.pageSize());
   });
 
   readonly hasActiveFilters = computed(() =>
@@ -398,6 +505,9 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   onSort(sort: Sort): void {
+    if (this.showTrash()) {
+      return;
+    }
     const data = [...this.filteredData()];
     if (!sort.active || sort.direction === '') {
       return;
