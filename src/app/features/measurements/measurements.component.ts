@@ -18,6 +18,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { CycleService } from '../../core/services/cycle.service';
 import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.component';
 import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-measurements',
@@ -559,11 +560,23 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
 
   deleteMeasurement(event: Event, measurement: Measurement): void {
     event.stopPropagation();
-    if (confirm(`¿Eliminar medición #${measurement.id} del medidor ${measurement.meter_id}?`)) {
+    const ref = this.dialog.open(ConfirmDialogComponent, {
+      width: '420px',
+      panelClass: ['dark-dialog', 'nested-confirm-dialog'],
+      data: {
+        title: 'Enviar a la papelera',
+        message:
+          `¿Estás seguro de que deseas eliminar la medición #${measurement.id} del medidor ${measurement.meter_id}? ` +
+          'Quedará en la papelera 30 días y podrás restaurarla desde la pestaña Papelera.',
+        confirmText: 'Enviar a papelera',
+        type: 'danger',
+      },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
       this.measurementService.deleteMeasurement(measurement.id);
-      // Update local filtered data after a short delay
       setTimeout(() => this.applyFilters(), 300);
-    }
+    });
   }
 
   timeAgo(dateStr: string): string {
