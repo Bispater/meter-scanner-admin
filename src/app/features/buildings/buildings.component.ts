@@ -272,8 +272,8 @@ export class BuildingsComponent {
         meterId: result.meterId,
         floor: result.floor,
         readingLayout: result.readingLayout as ReadingLayout,
-      }).subscribe((res: unknown) => {
-        const created = res as { id?: number };
+      }      ).subscribe((res: unknown) => {
+        const created = res as { id?: number; qr_code?: string };
         void this.qrService.addQr(
           building.name,
           tower.name,
@@ -281,6 +281,7 @@ export class BuildingsComponent {
           result.meterId,
           result.readingLayout as 'A' | 'B',
           created?.id != null ? +created.id : undefined,
+          created?.qr_code,
         );
       });
     });
@@ -326,9 +327,18 @@ export class BuildingsComponent {
     });
     ref.afterClosed().subscribe(async (apartments: Omit<Apartment, 'id'>[] | undefined) => {
       if (!apartments?.length) return;
-      await this.buildingService.bulkAddApartments(tower.id, apartments);
-      for (const apt of apartments) {
-        await this.qrService.addQr(building.name, tower.name, apt.number, apt.meterId, apt.readingLayout);
+      const bulk = await this.buildingService.bulkAddApartments(tower.id, apartments);
+      for (const apt of bulk.apartments) {
+        const layout = apt.reading_layout === 'B' ? 'B' : 'A';
+        await this.qrService.addQr(
+          building.name,
+          tower.name,
+          apt.number,
+          apt.meter_id ?? '',
+          layout,
+          apt.id,
+          apt.qr_code,
+        );
       }
     });
   }

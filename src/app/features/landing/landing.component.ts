@@ -25,6 +25,7 @@ import { MatIconModule } from '@angular/material/icon';
         <nav class="hidden md:flex items-center gap-8">
           <a href="#features" class="text-sm text-slate-400 hover:text-white transition-colors">Características</a>
           <a href="#how" class="text-sm text-slate-400 hover:text-white transition-colors">Cómo funciona</a>
+          <a href="#subscription" class="text-sm text-slate-400 hover:text-white transition-colors">Tu cuenta</a>
           <a href="#pricing" class="text-sm text-slate-400 hover:text-white transition-colors">Precios</a>
           <a href="#contact" class="text-sm text-slate-400 hover:text-white transition-colors">Contacto</a>
         </nav>
@@ -226,6 +227,58 @@ import { MatIconModule } from '@angular/material/icon';
       <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-40">
         <span class="text-xs text-slate-500 tracking-widest uppercase">scroll</span>
         <div class="scroll-pill"></div>
+      </div>
+    </section>
+
+    <!-- ══ SUBSCRIPTION / ACCOUNT (fuera del login) ══ -->
+    <section id="subscription" class="relative bg-slate-950 border-y border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-6 py-16 lg:py-20">
+        <div class="text-center mb-12 max-w-2xl mx-auto">
+          <p class="text-cyan-400 text-xs font-semibold tracking-widest uppercase mb-3">Contratación</p>
+          <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">De la suscripción a tu cuenta</h2>
+          <p class="text-slate-400 text-base leading-relaxed">
+            Contratas un plan (o nos escribes para uno a medida). Activamos tu <strong class="text-slate-300">organización</strong> en Metscan
+            y te enviamos el acceso al <strong class="text-slate-300">correo que indiques</strong>: ahí recibirás la invitación o las credenciales del panel de administración.
+            No necesitas crear nada a mano antes de iniciar sesión: el alta va ligada a tu compra o acuerdo comercial.
+          </p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-6 lg:gap-8 mb-12">
+          @for (s of subscriptionSteps; track s.title) {
+            <div class="bg-slate-900/80 border border-slate-700/80 rounded-2xl p-6 text-center hover:border-cyan-500/25 transition-colors">
+              <div class="w-12 h-12 rounded-xl mx-auto mb-4 flex items-center justify-center" [class]="s.iconBg">
+                <mat-icon [class]="s.iconColor" style="font-size:26px;width:26px;height:26px;">{{ s.icon }}</mat-icon>
+              </div>
+              <p class="text-xs font-bold text-cyan-500/90 uppercase tracking-wide mb-2">Paso {{ s.step }}</p>
+              <h3 class="text-lg font-semibold text-white mb-2">{{ s.title }}</h3>
+              <p class="text-slate-400 text-sm leading-relaxed">{{ s.body }}</p>
+            </div>
+          }
+        </div>
+
+        <div class="max-w-xl mx-auto bg-slate-800/40 border border-slate-700 rounded-2xl p-6 sm:p-8 text-center">
+          <mat-icon class="text-cyan-400 mb-3" style="font-size:36px;width:36px;height:36px;">mark_email_read</mat-icon>
+          <p class="text-white font-semibold mb-2">¿Ya pagaste o quieres activar tu cuenta?</p>
+          <p class="text-slate-400 text-sm mb-6">
+            Escríbenos con el correo donde quieres recibir el acceso y el nombre de tu administración o edificio. Respondemos con los siguientes pasos (o integración con pago cuando esté conectado).
+          </p>
+          <div class="flex flex-col sm:flex-row gap-3 justify-center">
+            <a
+              href="mailto:hola@metscan.io?subject=Suscripción%20Metscan%20-%20alta%20de%20cuenta&amp;body=Correo%20para%20el%20acceso%3A%0ANombre%20organización%20%2F%20edificio%3A%0APlan%20de%20interés%3A%0A"
+              class="inline-flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-semibold px-5 py-3 rounded-xl text-sm transition-colors no-underline"
+            >
+              <mat-icon style="font-size:18px;width:18px;height:18px;">mail</mat-icon>
+              Solicitar acceso por correo
+            </a>
+            <a
+              href="#pricing"
+              class="inline-flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-medium px-5 py-3 rounded-xl text-sm border border-slate-600 transition-colors no-underline"
+            >
+              <mat-icon style="font-size:18px;width:18px;height:18px;">payments</mat-icon>
+              Ver planes
+            </a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -441,6 +494,7 @@ import { MatIconModule } from '@angular/material/icon';
           </div>
           <nav class="flex flex-wrap justify-center items-center gap-6 text-sm text-slate-500">
             <a href="#features" class="hover:text-slate-300 transition-colors">Características</a>
+            <a href="#subscription" class="hover:text-slate-300 transition-colors">Tu cuenta</a>
             <a href="#pricing" class="hover:text-slate-300 transition-colors">Precios</a>
             <a href="mailto:hola@metscan.io" class="hover:text-slate-300 transition-colors">hola&#64;metscan.io</a>
             <a routerLink="/login" class="hover:text-slate-300 transition-colors">Admin</a>
@@ -561,6 +615,34 @@ export class LandingComponent {
   onScroll(): void {
     this.scrolled.set(window.scrollY > 24);
   }
+
+  /** Pasos del flujo comercial → cuenta (contenido marketing; el alta real la hace el equipo o futuro checkout). */
+  readonly subscriptionSteps = [
+    {
+      step: '1',
+      icon: 'shopping_cart',
+      title: 'Eliges plan o cotización',
+      body: 'Comparas precios aquí o pides un plan Empresarial. El cobro puede ser mensual, anual o acuerdo directo.',
+      iconBg: 'bg-cyan-500/15',
+      iconColor: 'text-cyan-400',
+    },
+    {
+      step: '2',
+      icon: 'hub',
+      title: 'Creamos tu organización',
+      body: 'En el backend queda tu tenant (organización), lista para edificios, usuarios y lecturas. No tienes que “registrarte” solo en la web pública.',
+      iconBg: 'bg-violet-500/15',
+      iconColor: 'text-violet-400',
+    },
+    {
+      step: '3',
+      icon: 'forward_to_inbox',
+      title: 'Acceso en tu correo',
+      body: 'Recibes en el email indicado la invitación o usuario administrador para entrar al panel. Desde ahí gestionas todo.',
+      iconBg: 'bg-emerald-500/15',
+      iconColor: 'text-emerald-400',
+    },
+  ];
 
   readonly chartHeights = [40, 65, 55, 80, 45, 70, 90, 60];
 

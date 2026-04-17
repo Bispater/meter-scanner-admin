@@ -1,31 +1,64 @@
-import { Component, inject, computed, OnInit, signal } from '@angular/core';
+import { Component, inject, computed, signal } from '@angular/core';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime } from 'rxjs/operators';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule, MatDialog, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { QrService, QrCode } from '../../core/services/qr.service';
 import { BuildingService } from '../../core/services/building.service';
+import { NotificationService } from '../../core/services/notification.service';
+import { Apartment, Tower } from '../../core/models/building.model';
+import { QrThumbCellComponent } from './qr-thumb-cell.component';
+
+type TowerTableRow = {
+  tower: Tower;
+  apartments: { apt: Apartment; qr: QrCode | null }[];
+};
 
 @Component({
   selector: 'app-qr-management',
   standalone: true,
-  imports: [MatIconModule, MatButtonModule, MatDialogModule, MatTooltipModule],
+  imports: [MatIconModule, MatButtonModule, MatDialogModule, MatTooltipModule, MatProgressSpinnerModule, QrThumbCellComponent],
   template: `
     <div class="space-y-6">
 
       <!-- Header -->
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="text-2xl font-bold text-white">Gestión de QRs</h2>
-          <p class="text-slate-400 text-sm mt-1">Códigos QR generados por edificio, torre y departamento</p>
+          <p class="text-slate-400 text-sm mt-1 max-w-2xl">
+            Cada fila genera su miniatura en el navegador (mismo JSON que el servidor); la caché local evita recalcular al volver.
+            Puedes colapsar cada torre para ver el resumen.
+          </p>
         </div>
-        @if (missingCount() > 0) {
-          <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold" (click)="generateAllMissing()" [disabled]="generating()">
-            <mat-icon>auto_fix_high</mat-icon>
-            Generar {{ missingCount() }} faltante{{ missingCount() === 1 ? '' : 's' }}
-          </button>
-        }
+        <div class="flex flex-wrap items-center gap-2">
+          @if (qrMatchCount() > 0) {
+            <button mat-stroked-button class="!border-cyan-500/50 !text-cyan-300 !text-sm"
+                    matTooltip="Hoja lista para imprimir o guardar como PDF"
+                    (click)="exportAllQrSheet()">
+              <mat-icon>print</mat-icon>
+              Exportar hoja (todos)
+            </button>
+          }
+          @if (missingCount() > 0 && !generating()) {
+            <button mat-flat-button class="!bg-cyan-500 !text-slate-900 !font-semibold" (click)="runSync()" [disabled]="generating()">
+              <mat-icon>auto_fix_high</mat-icon>
+              Generar {{ missingCount() }} faltante{{ missingCount() === 1 ? '' : 's' }}
+            </button>
+          }
+        </div>
       </div>
+
+      @if (generating()) {
+        <div class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800 border border-cyan-500/25">
+          <mat-spinner diameter="24" class="!text-cyan-400" />
+          <span class="text-slate-200 text-sm">
+            Preparando imágenes QR… {{ syncProgress().done }} / {{ syncProgress().total || '…' }}
+          </span>
+        </div>
+      }
 
       <!-- Stats -->
       <div class="grid grid-cols-3 gap-4">
@@ -77,13 +110,36 @@ import { BuildingService } from '../../core/services/building.service';
           @for (t of b.towers; track t.tower.id) {
             <div class="border-b border-slate-700/50 last:border-b-0">
 
-              <!-- Tower subheader -->
-              <div class="flex items-center gap-2 px-5 py-2.5 bg-slate-800/60">
-                <mat-icon class="text-indigo-400" style="font-size:16px;width:16px;height:16px;">apartment</mat-icon>
-                <span class="text-sm font-semibold text-slate-300">{{ t.tower.name }}</span>
-                <span class="text-xs text-slate-500 ml-1">— {{ t.apartments.length }} depto{{ t.apartments.length !== 1 ? 's' : '' }}</span>
+              <!-- Tower subheader + dropdown -->
+              <div class="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-2.5 bg-slate-800/60">
+                <button type="button"
+                        class="flex items-center gap-2 flex-1 min-w-0 text-left rounded-lg hover:bg-slate-700/40 px-1 py-0.5 -mx-1 transition-colors"
+                        (click)="toggleTower(t.tower.id)">
+                  <mat-icon class="text-slate-400 shrink-0" style="font-size:22px;width:22px;height:22px;">
+                    {{ isTowerCollapsed(t.tower.id) ? 'expand_more' : 'expand_less' }}
+                  </mat-icon>
+                  <mat-icon class="text-indigo-400 shrink-0" style="font-size:16px;width:16px;height:16px;">apartment</mat-icon>
+                  <span class="text-sm font-semibold text-slate-300">{{ t.tower.name }}</span>
+                  <span class="text-xs text-slate-500">— {{ t.apartments.length }} depto{{ t.apartments.length !== 1 ? 's' : '' }}</span>
+                </button>
+                <button mat-stroked-button
+                        type="button"
+                        class="!border-slate-600 !text-slate-300 !text-xs !h-8 !min-w-0 shrink-0"
+                        matTooltip="Hoja con varios QR por fila (imprimir o PDF)"
+                        (click)="exportTowerQrSheet(b.building.name, t.tower.name, t.apartments); $event.stopPropagation()">
+                  <mat-icon style="font-size:16px;width:16px;height:16px;">print</mat-icon>
+                  Exportar torre
+                </button>
               </div>
 
+              @if (isTowerCollapsed(t.tower.id)) {
+                <div class="px-5 py-3 text-sm text-slate-400 border-t border-slate-700/30 bg-slate-900/20">
+                  <span class="text-slate-300 font-medium">Resumen:</span>
+                  {{ towerSummaryLine(t) }}
+                </div>
+              }
+
+              @if (!isTowerCollapsed(t.tower.id)) {
               <!-- Apartments table -->
               <table class="w-full text-sm">
                 <thead>
@@ -107,54 +163,45 @@ import { BuildingService } from '../../core/services/building.service';
                         }
                       </td>
 
-                      <!-- QR cell -->
+                      <!-- QR cell: miniatura por fila + lista global (caché) -->
                       <td class="px-3 py-3 text-center">
-                        @if (row.qr) {
-                          <img [src]="row.qr.dataUrl"
-                               class="w-10 h-10 bg-white rounded p-0.5 mx-auto cursor-pointer hover:scale-110 transition-transform border border-slate-600"
-                               [alt]="'QR ' + row.apt.qrCode"
-                               (click)="openFullQr(row.qr)" />
-                        } @else {
-                          <span class="inline-flex items-center gap-1 text-amber-400/70 text-xs">
-                            <mat-icon style="font-size:13px;width:13px;height:13px;">radio_button_unchecked</mat-icon>
-                            Sin QR
-                          </span>
-                        }
+                        <app-qr-thumb-cell
+                          [buildingName]="b.building.name"
+                          [towerName]="t.tower.name"
+                          [apt]="row.apt"
+                          (picked)="openFullQr($event)"
+                        />
                       </td>
 
                       <!-- Actions cell -->
                       <td class="px-5 py-3 text-right">
-                        @if (row.qr) {
+                        @if (resolvedQr(row, t.tower.name); as rq) {
                           <div class="inline-flex gap-1">
                             <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-white"
                                     matTooltip="Ver completo"
-                                    (click)="openFullQr(row.qr!)">
+                                    (click)="openFullQr(rq)">
                               <mat-icon style="font-size:18px;width:18px;height:18px;">open_in_new</mat-icon>
                             </button>
                             <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-cyan-400"
                                     matTooltip="Descargar"
-                                    (click)="downloadQr(row.qr!)">
+                                    (click)="downloadQr(rq)">
                               <mat-icon style="font-size:18px;width:18px;height:18px;">download</mat-icon>
                             </button>
                             <button mat-icon-button class="!w-8 !h-8 !text-slate-400 hover:!text-slate-200"
                                     matTooltip="Imprimir"
-                                    (click)="printQr(row.qr!, t.tower.name, row.apt.number)">
+                                    (click)="printQr(rq, t.tower.name, row.apt.number)">
                               <mat-icon style="font-size:18px;width:18px;height:18px;">print</mat-icon>
                             </button>
                           </div>
                         } @else {
-                          <button mat-stroked-button
-                                  class="!border-cyan-500/40 !text-cyan-400 !text-xs !h-7 !px-3"
-                                  (click)="generateForApt(b.building.name, t.tower.name, row.apt.number, row.apt.meterId || '', row.apt.readingLayout, +row.apt.id)">
-                            <mat-icon style="font-size:14px;width:14px;height:14px;">qr_code_2</mat-icon>
-                            Generar
-                          </button>
+                          <span class="text-slate-600 text-xs">{{ generating() ? '…' : '—' }}</span>
                         }
                       </td>
                     </tr>
                   }
                 </tbody>
               </table>
+              }
             </div>
           }
 
@@ -173,12 +220,16 @@ import { BuildingService } from '../../core/services/building.service';
     </div>
   `,
 })
-export class QrManagementComponent implements OnInit {
+export class QrManagementComponent {
   readonly qrService    = inject(QrService);
   readonly buildingService = inject(BuildingService);
   private  readonly dialog = inject(MatDialog);
+  private  readonly notify = inject(NotificationService);
 
   readonly generating = signal(false);
+  readonly syncProgress = signal<{ done: number; total: number }>({ done: 0, total: 0 });
+  /** Tower ids whose table is collapsed (summary visible). */
+  readonly collapsedTowerIds = signal<Set<string>>(new Set());
 
   readonly tableData = computed(() => {
     const qrByCode = new Map(this.qrService.qrList().map(q => [q.qrCode, q]));
@@ -206,34 +257,132 @@ export class QrManagementComponent implements OnInit {
     return this.buildingService.allApartments().filter(a => !codesWithQr.has(a.qrCode ?? '')).length;
   });
 
-  ngOnInit(): void {
-    this.qrService.init();
+  constructor() {
+    void (async () => {
+      await this.qrService.init();
+      await this.runSync();
+      toObservable(this.buildingService.buildings)
+        .pipe(debounceTime(350), takeUntilDestroyed())
+        .subscribe(() => void this.scheduleSync());
+    })();
   }
 
-  async generateForApt(
-    buildingName: string,
-    towerName: string,
-    aptNumber: string,
-    meterId: string,
-    meterType: 'A' | 'B' = 'A',
-    apartmentId?: number,
-  ): Promise<void> {
-    await this.qrService.addQr(buildingName, towerName, aptNumber, meterId, meterType, apartmentId);
+  private scheduleSync(): void {
+    const buildings = this.buildingService.buildings();
+    if (buildings.length === 0) return;
+    void this.runSync();
   }
 
-  async generateAllMissing(): Promise<void> {
-    this.generating.set(true);
-    const codesWithQr = new Set(this.qrService.qrList().map(q => q.qrCode));
-    for (const b of this.buildingService.buildings()) {
-      for (const t of b.towers) {
-        for (const a of t.apartments) {
-          if (!codesWithQr.has(a.qrCode ?? '')) {
-            await this.qrService.addQr(b.name, t.name, a.number, a.meterId, a.readingLayout, +a.id);
-          }
-        }
-      }
+  toggleTower(towerId: string): void {
+    this.collapsedTowerIds.update(s => {
+      const n = new Set(s);
+      if (n.has(towerId)) n.delete(towerId);
+      else n.add(towerId);
+      return n;
+    });
+  }
+
+  isTowerCollapsed(towerId: string): boolean {
+    return this.collapsedTowerIds().has(towerId);
+  }
+
+  towerSummaryLine(t: TowerTableRow): string {
+    this.qrService.qrList();
+    const n = t.apartments.length;
+    const withQr = t.apartments.filter(r => this.resolvedQr(r, t.tower.name)).length;
+    const withMeter = t.apartments.filter(r => r.apt.meterId?.trim()).length;
+    return `${withQr}/${n} con imagen QR · ${withMeter} con medidor · ${n - withMeter} sin medidor`;
+  }
+
+  /** Fila de tabla + código en memoria/caché (actualiza cuando el thumb rellena el servicio). */
+  resolvedQr(row: TowerTableRow['apartments'][0], towerName: string): QrCode | null {
+    this.qrService.qrList();
+    if (row.qr) return row.qr;
+    const code = (row.apt.qrCode?.trim() || this.qrService.qrCodeForApartment(towerName, row.apt.number)).trim();
+    return this.qrService.getByQrCode(code) ?? null;
+  }
+
+  exportTowerQrSheet(buildingName: string, towerName: string, rows: TowerTableRow['apartments']): void {
+    const qrs = rows.map(r => this.resolvedQr(r, towerName)).filter((q): q is QrCode => q != null);
+    if (qrs.length === 0) {
+      this.notify.info('Aún no hay imágenes QR para esta torre (espera a que termine la carga o pulsa Generar).');
+      return;
     }
-    this.generating.set(false);
+    this.openQrPrintSheet(qrs, `${buildingName} — ${towerName}`);
+  }
+
+  exportAllQrSheet(): void {
+    const aptCodes = new Set(this.buildingService.allApartments().map(a => a.qrCode ?? ''));
+    const qrs = this.qrService.qrList().filter(q => aptCodes.has(q.qrCode));
+    if (qrs.length === 0) {
+      this.notify.info('No hay QRs listos para exportar.');
+      return;
+    }
+    this.openQrPrintSheet(qrs, 'Todos los departamentos');
+  }
+
+  private openQrPrintSheet(qrs: QrCode[], title: string): void {
+    const cards = qrs
+      .map(
+        q => `
+      <div class="card">
+        <img src="${q.dataUrl}" alt="" />
+        <div class="code">${this.escapeHtml(q.qrCode)}</div>
+        <div class="sub">${this.escapeHtml(q.building)} — ${this.escapeHtml(q.tower)}</div>
+        <div class="sub">Depto ${this.escapeHtml(q.apartment)}</div>
+        ${q.meterId ? `<div class="meter">Medidor: ${this.escapeHtml(q.meterId)}</div>` : '<div class="meter muted">Sin medidor</div>'}
+      </div>`,
+      )
+      .join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${this.escapeHtml(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; color: #111; background: #fff; }
+  h1 { font-size: 1.15rem; margin: 0 0 20px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; max-width: 960px; margin: 0 auto; }
+  @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  .card { text-align: center; border: 1px solid #ddd; border-radius: 10px; padding: 14px 10px; break-inside: avoid; page-break-inside: avoid; }
+  img { width: 150px; height: 150px; object-fit: contain; display: block; margin: 0 auto; }
+  .code { font-weight: 700; font-size: 14px; margin-top: 10px; font-family: ui-monospace, monospace; }
+  .sub { font-size: 11px; color: #333; margin-top: 4px; line-height: 1.35; }
+  .meter { font-size: 11px; color: #444; margin-top: 6px; }
+  .meter.muted { color: #888; }
+  @media print { body { padding: 12px; } .grid { gap: 14px; } }
+</style></head><body>
+  <h1>${this.escapeHtml(title)}</h1>
+  <div class="grid">${cards}</div>
+  <script>setTimeout(function(){ window.print(); }, 350);</script>
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) {
+      this.notify.error('Permite ventanas emergentes para exportar la hoja.');
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+  }
+
+  private escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async runSync(): Promise<void> {
+    if (this.generating()) return;
+    await new Promise<void>(r => requestAnimationFrame(() => r()));
+    const buildings = this.buildingService.buildings();
+    if (buildings.length === 0) return;
+    this.generating.set(true);
+    this.syncProgress.set({ done: 0, total: 0 });
+    try {
+      await this.qrService.syncMissingFromBuildings(buildings, (done, total) => {
+        this.syncProgress.set({ done, total });
+      });
+    } finally {
+      this.generating.set(false);
+    }
   }
 
   downloadQr(qr: QrCode): void {

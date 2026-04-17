@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, computed } from '@angular/core';
 import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -6,6 +6,7 @@ import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../core/services/auth.service';
 import { DemoModeService } from '../../core/services/demo-mode.service';
 import { BuildingService } from '../../core/services/building.service';
@@ -27,6 +28,7 @@ import { OrganizationService } from '../../core/services/organization.service';
     MatIconModule,
     MatButtonModule,
     MatMenuModule,
+    MatProgressSpinnerModule,
   ],
   template: `
     <div class="flex h-screen overflow-hidden bg-slate-900">
@@ -97,7 +99,18 @@ import { OrganizationService } from '../../core/services/organization.service';
         </header>
 
         <!-- Page Content -->
-        <main class="flex-1 overflow-y-auto p-6 bg-slate-900">
+        <main class="relative flex-1 overflow-y-auto p-6 bg-slate-900">
+          @if (dataLoading()) {
+            <div
+              class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-slate-900/85 backdrop-blur-[1px]"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <mat-spinner diameter="40" />
+              <span class="text-sm text-slate-400">Cargando datos…</span>
+            </div>
+          }
           <router-outlet />
         </main>
       </div>
@@ -116,6 +129,19 @@ export class MainLayoutComponent implements OnInit {
   private readonly measurementService = inject(MeasurementService);
   private readonly cycleService = inject(CycleService);
   private readonly organizationService = inject(OrganizationService);
+
+  /** Overlay until each service’s first list load completes (not on every refetch after CRUD). */
+  readonly dataLoading = computed(() => {
+    const orgPending =
+      this.authService.isSuperAdmin() && this.organizationService.initialLoadPending();
+    return (
+      this.buildingService.initialLoadPending() ||
+      this.userService.initialLoadPending() ||
+      this.measurementService.initialLoadPending() ||
+      this.cycleService.initialLoadPending() ||
+      orgPending
+    );
+  });
 
   ngOnInit(): void {
     this.buildingService.loadAll();

@@ -1,4 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
+import { finalize } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
 import { Measurement, Summary } from '../models/measurement.model';
 import { environment } from '../../../environments/environment';
@@ -39,6 +40,11 @@ export class MeasurementService {
   private readonly _trash = signal<Measurement[]>([]);
   private readonly _summary = signal<Summary>({ total_readings_today: 0, pending_alerts: 0, total_consumption_m3: 0 });
 
+  private readonly _loading = signal(false);
+  readonly loading = this._loading.asReadonly();
+  private readonly _initialLoadPending = signal(true);
+  readonly initialLoadPending = this._initialLoadPending.asReadonly();
+
   readonly measurements = this._measurements.asReadonly();
   readonly trash = this._trash.asReadonly();
   readonly summary = this._summary.asReadonly();
@@ -59,19 +65,28 @@ export class MeasurementService {
   loadAll(): void {
     const endpoint = `${this.url}/?page_size=500&ordering=-captured_at`;
     console.log('[MEASUREMENTS] GET', endpoint);
-    this.http.get<ApiPage<ApiMeasurement>>(endpoint).subscribe({
-      next: res => {
-        console.log('[MEASUREMENTS] Loaded:', res.count, 'measurements', res.results);
-        const mapped = res.results.map(m => this._mapMeasurement(m));
-        this._measurements.set(mapped);
-        this._computeSummary(mapped);
-        this._onLoadedCallbacks.forEach(cb => cb());
-      },
-      error: err => {
-        console.error('[MEASUREMENTS] Load error:', err);
-        this.notify.error('Error al cargar mediciones');
-      },
-    });
+    this._loading.set(true);
+    this.http
+      .get<ApiPage<ApiMeasurement>>(endpoint)
+      .pipe(
+        finalize(() => {
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
+        }),
+      )
+      .subscribe({
+        next: res => {
+          console.log('[MEASUREMENTS] Loaded:', res.count, 'measurements', res.results);
+          const mapped = res.results.map(m => this._mapMeasurement(m));
+          this._measurements.set(mapped);
+          this._computeSummary(mapped);
+          this._onLoadedCallbacks.forEach(cb => cb());
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Load error:', err);
+          this.notify.error('Error al cargar mediciones');
+        },
+      });
   }
 
   getFilteredMeasurements(filters: {

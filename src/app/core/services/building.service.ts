@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, finalize } from 'rxjs/operators';
 import { Building, Tower, Apartment, ReadingLayout } from '../models/building.model';
 import { environment } from '../../../environments/environment';
 import { NotificationService } from './notification.service';
@@ -36,6 +36,13 @@ interface ApiBuilding {
 
 interface ApiPage<T> { count: number; results: T[]; }
 
+/** Response from POST /apartments/bulk-create/ */
+export interface BulkCreateApartmentsResponse {
+  created: number;
+  apartments: ApiApartment[];
+  errors?: { number: string; meter_id?: string; error: string }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class BuildingService {
   private readonly http = inject(HttpClient);
@@ -44,6 +51,12 @@ export class BuildingService {
 
   private readonly _buildings = signal<Building[]>([]);
   readonly buildings = this._buildings.asReadonly();
+  /** True while any GET /buildings/ is in flight (refetch after mutations, etc.). */
+  private readonly _loading = signal(false);
+  readonly loading = this._loading.asReadonly();
+  /** True until the first list load finishes (used for bootstrap overlay, not every refetch). */
+  private readonly _initialLoadPending = signal(true);
+  readonly initialLoadPending = this._initialLoadPending.asReadonly();
 
   /** Flat list of all towers across all buildings */
   readonly allTowers = computed(() =>
@@ -69,16 +82,25 @@ export class BuildingService {
 
   loadAll(): void {
     console.log('[BUILDINGS] GET', `${this.url}/buildings/?page_size=200`);
-    this.http.get<ApiPage<ApiBuilding>>(`${this.url}/buildings/?page_size=200`).subscribe({
-      next: res => {
-        console.log('[BUILDINGS] Loaded:', res.count, 'buildings', res.results);
-        this._buildings.set(res.results.map(b => this._mapBuilding(b)));
-      },
-      error: err => {
-        console.error('[BUILDINGS] Load error:', err);
-        this.notify.error('Error al cargar edificios');
-      },
-    });
+    this._loading.set(true);
+    this.http
+      .get<ApiPage<ApiBuilding>>(`${this.url}/buildings/?page_size=200`)
+      .pipe(
+        finalize(() => {
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
+        }),
+      )
+      .subscribe({
+        next: res => {
+          console.log('[BUILDINGS] Loaded:', res.count, 'buildings', res.results);
+          this._buildings.set(res.results.map(b => this._mapBuilding(b)));
+        },
+        error: err => {
+          console.error('[BUILDINGS] Load error:', err);
+          this.notify.error('Error al cargar edificios');
+        },
+      });
   }
 
   // ── CRUD Buildings ──
@@ -188,7 +210,7 @@ export class BuildingService {
     );
   }
 
-  bulkAddApartments(towerId: string, apts: Omit<Apartment, 'id'>[]): Promise<number> {
+  bulkAddApartments(towerId: string, apts: Omit<Apartment, 'id'>[]): Promise<BulkCreateApartmentsResponse> {
     const payload = {
       tower: Number(towerId),
       apartments: apts.map(a => ({
@@ -200,12 +222,12 @@ export class BuildingService {
     };
     console.log('[BUILDINGS] POST /apartments/bulk-create', payload.apartments.length, 'items');
     return new Promise((resolve, reject) => {
-      this.http.post<{ created: number }>(`${this.url}/apartments/bulk-create/`, payload).subscribe({
+      this.http.post<BulkCreateApartmentsResponse>(`${this.url}/apartments/bulk-create/`, payload).subscribe({
         next: res => {
           console.log('[BUILDINGS] Bulk apartments created:', res.created);
           this.notify.success(`${res.created} departamentos creados`);
           this.loadAll();
-          resolve(res.created);
+          resolve(res);
         },
         error: err => {
           console.error('[BUILDINGS] Bulk create error:', err);

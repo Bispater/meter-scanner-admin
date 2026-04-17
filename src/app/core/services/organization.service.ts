@@ -1,4 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { finalize } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { NotificationService } from './notification.service';
@@ -23,14 +24,30 @@ export class OrganizationService {
   private readonly _orgs = signal<Organization[]>([]);
   readonly orgs = this._orgs.asReadonly();
 
+  private readonly _loading = signal(false);
+  readonly loading = this._loading.asReadonly();
+  /** Only used when loadAll runs (superadmin); stays false if never loaded. */
+  private readonly _initialLoadPending = signal(false);
+  readonly initialLoadPending = this._initialLoadPending.asReadonly();
+
   loadAll(): void {
-    this.http.get<ApiPage<Organization>>(`${this.url}/?page_size=200`).subscribe({
-      next: res => this._orgs.set(res.results),
-      error: err => {
-        console.error('[ORG] Load error:', err);
-        this.notify.error('Error al cargar organizaciones');
-      },
-    });
+    this._initialLoadPending.set(true);
+    this._loading.set(true);
+    this.http
+      .get<ApiPage<Organization>>(`${this.url}/?page_size=200`)
+      .pipe(
+        finalize(() => {
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
+        }),
+      )
+      .subscribe({
+        next: res => this._orgs.set(res.results),
+        error: err => {
+          console.error('[ORG] Load error:', err);
+          this.notify.error('Error al cargar organizaciones');
+        },
+      });
   }
 
   create(name: string, slug: string): Promise<Organization> {

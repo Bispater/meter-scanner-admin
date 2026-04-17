@@ -1,63 +1,45 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import QRCode from 'qrcode';
+import { Apartment, Building, Tower } from '../models/building.model';
+import { QrMeterType, QrCode } from '../models/qr-code.model';
+import { QrImageCacheService } from './qr-image-cache.service';
 
-export type QrMeterType = 'A' | 'B';
+export type { QrMeterType, QrCode };
 
-export interface QrCode {
-  id: string;
-  qrCode: string;         // stable identifier: building-tower-apt (e.g. "Robles-A-1409")
-  meterId: string;        // physical meter ID (informational, can change)
-  meterType: QrMeterType;
-  building: string;
-  tower: string;
-  apartment: string;
-  apartmentId?: number;
-  generated: string;
-  dataUrl: string;        // base64 PNG data-URL of the QR image
-  payload: string;        // raw string encoded in the QR (= JSON)
-}
+const CHUNK_EVERY = 5;
 
 @Injectable({ providedIn: 'root' })
 export class QrService {
+  private readonly _cache = inject(QrImageCacheService);
   private readonly _qrList = signal<QrCode[]>([]);
   readonly qrList = this._qrList.asReadonly();
   private _initialized = false;
+  private _initPromise: Promise<void> | null = null;
 
   readonly towers = ['Torre A', 'Torre B', 'Torre C'];
 
-  /** Bootstrap seed data the first time any component reads the list */
+  /** Must match Django `Apartment._generate_qr_code` (number + tower short). */
+  qrCodeForApartment(towerName: string, apartmentNumber: string): string {
+    const short = towerName.replace(/^Torre\s+/i, '').trim();
+    return `${apartmentNumber}${short}`;
+  }
+
+  /**
+   * Restores cached QRs from IndexedDB before sync so a full page reload does not
+   * walk every apartment again (only missing or stale rows are processed).
+   */
   async init(): Promise<void> {
     if (this._initialized) return;
-    this._initialized = true;
-
-    const seed = [
-      { building: 'Edificio Demo', tower: 'Torre A', apartment: '101', meterId: '621659-11', meterType: 'A' as QrMeterType, generated: '20/03/2026' },
-      { building: 'Edificio Demo', tower: 'Torre B', apartment: '504', meterId: '24081375',  meterType: 'A' as QrMeterType, generated: '20/03/2026' },
-      { building: 'Edificio Demo', tower: 'Torre A', apartment: '203', meterId: '785412-03', meterType: 'B' as QrMeterType, generated: '21/03/2026' },
-      { building: 'Edificio Demo', tower: 'Torre C', apartment: '302', meterId: '963258-07', meterType: 'A' as QrMeterType, generated: '22/03/2026' },
-      { building: 'Edificio Demo', tower: 'Torre B', apartment: '201', meterId: '147852-19', meterType: 'A' as QrMeterType, generated: '23/03/2026' },
-      { building: 'Edificio Demo', tower: 'Torre A', apartment: '405', meterId: '369258-22', meterType: 'A' as QrMeterType, generated: '24/03/2026' },
-    ];
-
-    const list: QrCode[] = [];
-    for (const s of seed) {
-      const qrCode = this._buildQrCode(s.building, s.tower, s.apartment);
-      const payload = this._buildPayload(qrCode, s.building, s.tower, s.apartment, s.meterId, s.meterType);
-      const dataUrl = await this._toDataUrl(payload);
-      list.push({
-        id: `qr-${s.apartment}${this._towerShort(s.tower)}`,
-        qrCode,
-        meterId: s.meterId,
-        meterType: s.meterType,
-        building: s.building,
-        tower: s.tower,
-        apartment: s.apartment,
-        generated: s.generated,
-        dataUrl,
-        payload,
-      });
+    if (!this._initPromise) {
+      this._initPromise = (async () => {
+        const restored = await this._cache.loadAllFullQrs();
+        if (restored.length) {
+          this._qrList.set(restored);
+        }
+        this._initialized = true;
+      })();
     }
-    this._qrList.set(list);
+    await this._initPromise;
   }
 
   async addQr(
@@ -67,12 +49,41 @@ export class QrService {
     meterId: string,
     meterType: QrMeterType = 'A',
     apartmentId?: number,
+    /** Prefer API value so JSON matches DB (scanned by the mobile app). */
+    qrCodeFromApi?: string | null,
   ): Promise<QrCode> {
-    const qrCode = this._buildQrCode(building, tower, apartment);
+    const qrCode = (qrCodeFromApi?.trim() || this.qrCodeForApartment(tower, apartment)).trim();
     const now = new Date();
     const generated = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
     const payload = this._buildPayload(qrCode, building, tower, apartment, meterId, meterType, apartmentId);
-    const dataUrl = await this._toDataUrl(payload);
+
+    const inMemory = this._qrList().find(q => q.qrCode === qrCode);
+    if (
+      inMemory &&
+      !this._needsQrRefreshFromParts(inMemory, building, tower, apartment, meterId, meterType, apartmentId)
+    ) {
+      return inMemory;
+    }
+    if (!inMemory) {
+      const cachedFull = await this._cache.getFullQr(qrCode);
+      if (
+        cachedFull &&
+        !this._needsQrRefreshFromParts(cachedFull, building, tower, apartment, meterId, meterType, apartmentId)
+      ) {
+        this._qrList.update(list => {
+          const rest = list.filter(q => q.qrCode !== qrCode);
+          return [cachedFull, ...rest];
+        });
+        return cachedFull;
+      }
+    }
+
+    const cacheKey = `${qrCode}::${this._hashPayload(payload)}`;
+    let dataUrl = await this._cache.get(cacheKey);
+    if (!dataUrl) {
+      dataUrl = await this._toDataUrl(payload);
+      void this._cache.set(cacheKey, dataUrl);
+    }
 
     const newQr: QrCode = {
       id: `qr-${Date.now()}`,
@@ -89,8 +100,51 @@ export class QrService {
     if (apartmentId != null) {
       newQr.apartmentId = apartmentId;
     }
-    this._qrList.update(list => [newQr, ...list]);
+    void this._cache.saveFullQr(newQr);
+    this._qrList.update(list => {
+      const rest = list.filter(q => q.qrCode !== newQr.qrCode);
+      return [newQr, ...rest];
+    });
     return newQr;
+  }
+
+  /**
+   * Builds PNG data URLs in the browser (no API load). Yields between rows so the UI stays responsive.
+   */
+  async syncMissingFromBuildings(
+    buildings: Building[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<void> {
+    type Row = { b: Building; t: Building['towers'][0]; a: Building['towers'][0]['apartments'][0] };
+    const rows: Row[] = [];
+    for (const b of buildings) {
+      for (const t of b.towers) {
+        for (const a of t.apartments) {
+          rows.push({ b, t, a });
+        }
+      }
+    }
+    const byCode = new Map(this._qrList().map(q => [q.qrCode, q]));
+    const pending = rows.filter(({ b, t, a }) => {
+      const code = (a.qrCode?.trim() || this.qrCodeForApartment(t.name, a.number)).trim();
+      if (!code.length) return false;
+      const q = byCode.get(code);
+      if (!q) return true;
+      return this._needsQrRefresh(q, b, t, a);
+    });
+    const total = pending.length;
+    onProgress?.(0, total);
+    let done = 0;
+    for (let i = 0; i < pending.length; i++) {
+      const { b, t, a } = pending[i];
+      const code = (a.qrCode?.trim() || this.qrCodeForApartment(t.name, a.number)).trim();
+      await this.addQr(b.name, t.name, a.number, a.meterId, a.readingLayout, +a.id, a.qrCode ?? null);
+      done++;
+      onProgress?.(done, total);
+      if (i % CHUNK_EVERY === CHUNK_EVERY - 1 && i < pending.length - 1) {
+        await new Promise<void>(r => requestAnimationFrame(() => r()));
+      }
+    }
   }
 
   getByQrCode(qrCode: string): QrCode | undefined {
@@ -127,16 +181,6 @@ export class QrService {
     return JSON.stringify(o);
   }
 
-  /** Derive the stable qr_code from building + tower + apartment */
-  private _buildQrCode(building: string, tower: string, apartment: string): string {
-    const bShort = building.replace(/^[Ee]dificio\s+/, '').trim().substring(0, 8);
-    return `${bShort}-${this._towerShort(tower)}-${apartment}`;
-  }
-
-  private _towerShort(tower: string): string {
-    return tower.replace(/^[Tt]orre\s+/, '').trim();
-  }
-
   private async _toDataUrl(text: string): Promise<string> {
     return QRCode.toDataURL(text, {
       width: 256,
@@ -144,5 +188,40 @@ export class QrService {
       color: { dark: '#000000', light: '#ffffff' },
       errorCorrectionLevel: 'M',
     });
+  }
+
+  private _hashPayload(payload: string): string {
+    let h = 2166136261;
+    for (let i = 0; i < payload.length; i++) {
+      h ^= payload.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  private _needsQrRefresh(q: QrCode, b: Building, t: Tower, a: Apartment): boolean {
+    return (
+      q.building !== b.name ||
+      q.tower !== t.name ||
+      q.apartment !== a.number ||
+      (q.meterId ?? '') !== (a.meterId ?? '') ||
+      q.meterType !== a.readingLayout
+    );
+  }
+
+  private _needsQrRefreshFromParts(
+    q: QrCode,
+    building: string,
+    tower: string,
+    apartment: string,
+    meterId: string,
+    meterType: QrMeterType,
+    apartmentId?: number,
+  ): boolean {
+    if (q.building !== building || q.tower !== tower || q.apartment !== apartment) return true;
+    if ((q.meterId ?? '') !== (meterId ?? '')) return true;
+    if (q.meterType !== meterType) return true;
+    if ((q.apartmentId ?? null) !== (apartmentId ?? null)) return true;
+    return false;
   }
 }

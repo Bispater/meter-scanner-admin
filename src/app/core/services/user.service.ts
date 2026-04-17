@@ -1,4 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
+import { finalize } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
 import { AppUser, UserRole } from '../models/user.model';
 import { environment } from '../../../environments/environment';
@@ -27,6 +28,10 @@ export class UserService {
 
   private readonly _users = signal<AppUser[]>([]);
   readonly users = this._users.asReadonly();
+  private readonly _loading = signal(false);
+  readonly loading = this._loading.asReadonly();
+  private readonly _initialLoadPending = signal(true);
+  readonly initialLoadPending = this._initialLoadPending.asReadonly();
 
   readonly operators = computed(() => this._users().filter(u => u.role === 'operator'));
   readonly activeOperators = computed(() => this.operators().filter(u => u.active));
@@ -35,16 +40,25 @@ export class UserService {
 
   loadAll(): void {
     console.log('[USERS] GET', `${this.url}/?page_size=200`);
-    this.http.get<ApiPage<ApiUser>>(`${this.url}/?page_size=200`).subscribe({
-      next: res => {
-        console.log('[USERS] Loaded:', res.count, 'users', res.results);
-        this._users.set(res.results.map(u => this._mapUser(u)));
-      },
-      error: err => {
-        console.error('[USERS] Load error:', err);
-        this.notify.error('Error al cargar usuarios');
-      },
-    });
+    this._loading.set(true);
+    this.http
+      .get<ApiPage<ApiUser>>(`${this.url}/?page_size=200`)
+      .pipe(
+        finalize(() => {
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
+        }),
+      )
+      .subscribe({
+        next: res => {
+          console.log('[USERS] Loaded:', res.count, 'users', res.results);
+          this._users.set(res.results.map(u => this._mapUser(u)));
+        },
+        error: err => {
+          console.error('[USERS] Load error:', err);
+          this.notify.error('Error al cargar usuarios');
+        },
+      });
   }
 
   // ── CRUD ──

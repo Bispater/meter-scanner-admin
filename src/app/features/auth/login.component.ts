@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../core/services/auth.service';
 
 @Component({
@@ -18,6 +19,7 @@ import { AuthService } from '../../core/services/auth.service';
     MatInputModule,
     MatButtonModule,
     MatIconModule,
+    MatProgressSpinnerModule,
   ],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-slate-900 px-4">
@@ -39,8 +41,21 @@ import { AuthService } from '../../core/services/auth.service';
               <span class="text-amber-400 font-semibold text-sm">Modo Demo</span>
             </div>
             <p class="text-slate-400 text-xs mb-4">Explora el panel con datos de ejemplo. Los cambios no se guardan.</p>
-            <button mat-flat-button class="w-full !bg-amber-500 !text-slate-900 !font-bold !rounded-xl !py-2" type="button" (click)="onDemoLogin()">
-              Entrar al demo ahora
+            <button
+              mat-flat-button
+              class="w-full !bg-amber-500 !text-slate-900 !font-bold !rounded-xl !py-2"
+              type="button"
+              [disabled]="loading()"
+              (click)="onDemoLogin()"
+            >
+              @if (loading()) {
+                <span class="inline-flex items-center justify-center gap-2">
+                  <mat-spinner diameter="20" />
+                  Conectando…
+                </span>
+              } @else {
+                Entrar al demo ahora
+              }
             </button>
           </div>
         }
@@ -52,7 +67,7 @@ import { AuthService } from '../../core/services/auth.service';
           <form (ngSubmit)="onLogin()" class="space-y-5">
             <mat-form-field appearance="outline" class="w-full">
               <mat-label>Usuario</mat-label>
-              <input matInput [(ngModel)]="username" name="username" placeholder="admin" autocomplete="username" />
+              <input matInput [(ngModel)]="username" name="username" placeholder="admin" autocomplete="username" [disabled]="loading()" />
               <mat-icon matPrefix>person</mat-icon>
             </mat-form-field>
 
@@ -60,9 +75,10 @@ import { AuthService } from '../../core/services/auth.service';
               <mat-label>Contraseña</mat-label>
               <input matInput [(ngModel)]="password" name="password"
                 [type]="hidePassword() ? 'password' : 'text'"
-                placeholder="••••••" autocomplete="current-password" />
+                placeholder="••••••" autocomplete="current-password"
+                [disabled]="loading()" />
               <mat-icon matPrefix>lock</mat-icon>
-              <button mat-icon-button matSuffix type="button" (click)="hidePassword.set(!hidePassword())">
+              <button mat-icon-button matSuffix type="button" [disabled]="loading()" (click)="hidePassword.set(!hidePassword())">
                 <mat-icon>{{ hidePassword() ? 'visibility_off' : 'visibility' }}</mat-icon>
               </button>
             </mat-form-field>
@@ -74,8 +90,20 @@ import { AuthService } from '../../core/services/auth.service';
               </div>
             }
 
-            <button mat-flat-button class="w-full !bg-cyan-500 !text-slate-900 !font-semibold !py-3 !rounded-lg" type="submit">
-              Ingresar
+            <button
+              mat-flat-button
+              class="w-full !bg-cyan-500 !text-slate-900 !font-semibold !py-3 !rounded-lg"
+              type="submit"
+              [disabled]="loading()"
+            >
+              @if (loading()) {
+                <span class="inline-flex items-center justify-center gap-2">
+                  <mat-spinner diameter="22" />
+                  Iniciando sesión…
+                </span>
+              } @else {
+                Ingresar
+              }
             </button>
           </form>
 

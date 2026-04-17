@@ -6,7 +6,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { OrganizationService, Organization } from '../../core/services/organization.service';
+import { DeleteConfirmDialogComponent } from '../buildings/buildings.component';
 
 @Component({
   selector: 'app-organizations',
@@ -19,6 +21,7 @@ import { OrganizationService, Organization } from '../../core/services/organizat
     MatFormFieldModule,
     MatInputModule,
     MatTooltipModule,
+    MatDialogModule,
   ],
   template: `
     <div class="space-y-6">
@@ -73,10 +76,12 @@ import { OrganizationService, Organization } from '../../core/services/organizat
                   <p class="text-xs text-slate-500 font-mono">{{ org.slug }}</p>
                 </div>
               </div>
-              <button mat-icon-button class="!w-8 !h-8 !text-slate-500 hover:!text-red-400"
-                      matTooltip="Eliminar"
-                      (click)="delete(org)">
-                <mat-icon style="font-size:18px;width:18px;height:18px;">delete</mat-icon>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-full text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40"
+                matTooltip="Eliminar"
+                (click)="requestDelete(org)">
+                <mat-icon class="!m-0 !block text-[20px] w-5 h-5 leading-none">delete_outline</mat-icon>
               </button>
             </div>
             <div class="mt-4 grid grid-cols-2 gap-2 text-center">
@@ -103,6 +108,7 @@ import { OrganizationService, Organization } from '../../core/services/organizat
 })
 export class OrganizationsComponent implements OnInit {
   readonly orgService = inject(OrganizationService);
+  private readonly dialog = inject(MatDialog);
 
   showForm = signal(false);
   newName = '';
@@ -124,9 +130,18 @@ export class OrganizationsComponent implements OnInit {
     this.cancelForm();
   }
 
-  delete(org: Organization): void {
-    if (confirm(`¿Eliminar la organización "${org.name}"? Esta acción no se puede deshacer.`)) {
-      this.orgService.delete(org.id);
-    }
+  requestDelete(org: Organization): void {
+    const ref = this.dialog.open(DeleteConfirmDialogComponent, {
+      width: '420px',
+      panelClass: 'dark-dialog',
+      data: {
+        title: 'Eliminar organización',
+        message: `¿Seguro que quieres eliminar "${org.name}"? Esta acción no se puede deshacer.`,
+        confirmText: 'Eliminar',
+      },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (confirmed) this.orgService.delete(org.id);
+    });
   }
 }
