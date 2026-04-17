@@ -64,8 +64,11 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
 .mat-mdc-form-field-text-suffix::before {
   display: none !important;
 }
+.mat-mdc-form-field-icon-prefix {
+  padding-left: 12px !important;
+}
 .mat-mdc-form-field-icon-prefix > .mat-icon {
-  padding: 0 6px 0 0 !important;
+  padding: 0 8px 0 0 !important;
 }
 
 /* 4. Consistent text / label colors for dark theme */
@@ -90,31 +93,21 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
   --mdc-dialog-supporting-text-color: #cbd5e1;
 }
 
-/* ── Snackbar styles ── */
-.snack-success .mdc-snackbar__surface {
-  background: #065f46 !important;
-  color: #d1fae5 !important;
-  border: 1px solid #10b981 !important;
+/* ── Toast notification animations ── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
 }
-.snack-success .mat-mdc-snack-bar-action {
-  color: #6ee7b7 !important;
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(110%); }
 }
-.snack-error .mdc-snackbar__surface {
-  background: #7f1d1d !important;
-  color: #fecaca !important;
-  border: 1px solid #ef4444 !important;
+@keyframes progress-shrink {
+  from { width: 100%; }
+  to   { width: 0%; }
 }
-.snack-error .mat-mdc-snack-bar-action {
-  color: #fca5a5 !important;
-}
-.snack-info .mdc-snackbar__surface {
-  background: #1e3a5f !important;
-  color: #bfdbfe !important;
-  border: 1px solid #3b82f6 !important;
-}
-.snack-info .mat-mdc-snack-bar-action {
-  color: #93c5fd !important;
-}
+.toast-enter { animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.toast-leave { animation: toast-out 0.25s ease-in forwards; }
 
 /* ── Lightbox full-screen image dialog ── */
 .lightbox-dialog .mat-mdc-dialog-container {

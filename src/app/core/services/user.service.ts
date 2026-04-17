@@ -137,12 +137,22 @@ export class UserService {
   // ── Assignment helpers ──
 
   assignApartments(userId: string, apartmentIds: string[]): void {
+    const user = this._users().find(u => u.id === userId);
+    const prevCount = user?.assignedApartmentIds.length ?? 0;
+    const newCount = apartmentIds.length;
     const payload = { apartment_ids: apartmentIds.map(Number) };
     console.log('[USERS] POST /users/' + userId + '/assign-apartments/', payload);
     this.http.post(`${this.url}/${userId}/assign-apartments/`, payload).subscribe({
       next: res => {
         console.log('[USERS] Assigned apartments:', res);
-        this.notify.success(`${apartmentIds.length} departamentos asignados`);
+        const diff = newCount - prevCount;
+        if (diff > 0) {
+          this.notify.success(`Asignación actualizada: +${diff} depto${diff !== 1 ? 's' : ''} (${newCount} total)`);
+        } else if (diff < 0) {
+          this.notify.success(`Asignación actualizada: ${diff} depto${diff !== -1 ? 's' : ''} (${newCount} total)`);
+        } else {
+          this.notify.success(`Asignación sin cambios (${newCount} dptos)`);
+        }
         this.loadAll();
       },
       error: err => {

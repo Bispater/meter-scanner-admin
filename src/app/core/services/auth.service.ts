@@ -82,6 +82,14 @@ export class AuthService {
       );
       console.log('[AUTH] User profile:', me);
 
+      if (me.role === 'operator') {
+        console.warn('[AUTH] Operator login blocked:', me.username);
+        sessionStorage.removeItem('metscan_access_token');
+        sessionStorage.removeItem('metscan_refresh_token');
+        this.notify.error('Los operadores deben usar la app móvil. Este panel es exclusivo para administradores.');
+        return false;
+      }
+
       const session: SessionUser = {
         id: String(me.id),
         username: me.username,

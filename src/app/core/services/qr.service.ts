@@ -5,9 +5,10 @@ export type QrMeterType = 'A' | 'B';
 
 export interface QrCode {
   id: string;
-  qrCode: string;         // stable identifier: aptNumber + towerShort (e.g. "1409A")
+  qrCode: string;         // stable identifier: building-tower-apt (e.g. "Robles-A-1409")
   meterId: string;        // physical meter ID (informational, can change)
   meterType: QrMeterType;
+  building: string;
   tower: string;
   apartment: string;
   apartmentId?: number;
@@ -30,24 +31,25 @@ export class QrService {
     this._initialized = true;
 
     const seed = [
-      { tower: 'Torre A', apartment: '101', meterId: '621659-11', meterType: 'A' as QrMeterType, generated: '20/03/2026' },
-      { tower: 'Torre B', apartment: '504', meterId: '24081375',  meterType: 'A' as QrMeterType, generated: '20/03/2026' },
-      { tower: 'Torre A', apartment: '203', meterId: '785412-03', meterType: 'B' as QrMeterType, generated: '21/03/2026' },
-      { tower: 'Torre C', apartment: '302', meterId: '963258-07', meterType: 'A' as QrMeterType, generated: '22/03/2026' },
-      { tower: 'Torre B', apartment: '201', meterId: '147852-19', meterType: 'A' as QrMeterType, generated: '23/03/2026' },
-      { tower: 'Torre A', apartment: '405', meterId: '369258-22', meterType: 'A' as QrMeterType, generated: '24/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre A', apartment: '101', meterId: '621659-11', meterType: 'A' as QrMeterType, generated: '20/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre B', apartment: '504', meterId: '24081375',  meterType: 'A' as QrMeterType, generated: '20/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre A', apartment: '203', meterId: '785412-03', meterType: 'B' as QrMeterType, generated: '21/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre C', apartment: '302', meterId: '963258-07', meterType: 'A' as QrMeterType, generated: '22/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre B', apartment: '201', meterId: '147852-19', meterType: 'A' as QrMeterType, generated: '23/03/2026' },
+      { building: 'Edificio Demo', tower: 'Torre A', apartment: '405', meterId: '369258-22', meterType: 'A' as QrMeterType, generated: '24/03/2026' },
     ];
 
     const list: QrCode[] = [];
     for (const s of seed) {
-      const qrCode = this._buildQrCode(s.tower, s.apartment);
-      const payload = this._buildPayload(qrCode, s.tower, s.apartment, s.meterId, s.meterType);
+      const qrCode = this._buildQrCode(s.building, s.tower, s.apartment);
+      const payload = this._buildPayload(qrCode, s.building, s.tower, s.apartment, s.meterId, s.meterType);
       const dataUrl = await this._toDataUrl(payload);
       list.push({
         id: `qr-${s.apartment}${this._towerShort(s.tower)}`,
         qrCode,
         meterId: s.meterId,
         meterType: s.meterType,
+        building: s.building,
         tower: s.tower,
         apartment: s.apartment,
         generated: s.generated,
@@ -59,16 +61,17 @@ export class QrService {
   }
 
   async addQr(
+    building: string,
     tower: string,
     apartment: string,
     meterId: string,
     meterType: QrMeterType = 'A',
     apartmentId?: number,
   ): Promise<QrCode> {
-    const qrCode = this._buildQrCode(tower, apartment);
+    const qrCode = this._buildQrCode(building, tower, apartment);
     const now = new Date();
     const generated = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-    const payload = this._buildPayload(qrCode, tower, apartment, meterId, meterType, apartmentId);
+    const payload = this._buildPayload(qrCode, building, tower, apartment, meterId, meterType, apartmentId);
     const dataUrl = await this._toDataUrl(payload);
 
     const newQr: QrCode = {
@@ -76,6 +79,7 @@ export class QrService {
       qrCode,
       meterId,
       meterType,
+      building,
       tower,
       apartment,
       generated,
@@ -96,6 +100,7 @@ export class QrService {
   /** QR payload: JSON for Flutter (qr_code, meter_id, meter_type, apartment_id, apartment_info) */
   private _buildPayload(
     qrCode: string,
+    building: string,
     tower: string,
     apartment: string,
     meterId: string,
@@ -106,13 +111,15 @@ export class QrService {
       qr_code: string;
       meter_id: string;
       meter_type: string;
+      building: string;
       apartment_info: string;
       apartment_id?: number;
     } = {
       qr_code: qrCode,
       meter_id: meterId || '',
       meter_type: meterType,
-      apartment_info: `${tower} — Depto ${apartment}`,
+      building,
+      apartment_info: `${building} — ${tower} — Depto ${apartment}`,
     };
     if (apartmentId != null) {
       o.apartment_id = apartmentId;
@@ -120,9 +127,10 @@ export class QrService {
     return JSON.stringify(o);
   }
 
-  /** Derive the stable qr_code from tower name + apartment number */
-  private _buildQrCode(tower: string, apartment: string): string {
-    return `${apartment}${this._towerShort(tower)}`;
+  /** Derive the stable qr_code from building + tower + apartment */
+  private _buildQrCode(building: string, tower: string, apartment: string): string {
+    const bShort = building.replace(/^[Ee]dificio\s+/, '').trim().substring(0, 8);
+    return `${bShort}-${this._towerShort(tower)}-${apartment}`;
   }
 
   private _towerShort(tower: string): string {

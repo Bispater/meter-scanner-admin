@@ -145,7 +145,7 @@ import { BuildingService } from '../../core/services/building.service';
                         } @else {
                           <button mat-stroked-button
                                   class="!border-cyan-500/40 !text-cyan-400 !text-xs !h-7 !px-3"
-                                  (click)="generateForApt(t.tower.name, row.apt.number, row.apt.meterId || '', row.apt.readingLayout, +row.apt.id)">
+                                  (click)="generateForApt(b.building.name, t.tower.name, row.apt.number, row.apt.meterId || '', row.apt.readingLayout, +row.apt.id)">
                             <mat-icon style="font-size:14px;width:14px;height:14px;">qr_code_2</mat-icon>
                             Generar
                           </button>
@@ -211,13 +211,14 @@ export class QrManagementComponent implements OnInit {
   }
 
   async generateForApt(
+    buildingName: string,
     towerName: string,
     aptNumber: string,
     meterId: string,
     meterType: 'A' | 'B' = 'A',
     apartmentId?: number,
   ): Promise<void> {
-    await this.qrService.addQr(towerName, aptNumber, meterId, meterType, apartmentId);
+    await this.qrService.addQr(buildingName, towerName, aptNumber, meterId, meterType, apartmentId);
   }
 
   async generateAllMissing(): Promise<void> {
@@ -227,7 +228,7 @@ export class QrManagementComponent implements OnInit {
       for (const t of b.towers) {
         for (const a of t.apartments) {
           if (!codesWithQr.has(a.qrCode ?? '')) {
-            await this.qrService.addQr(t.name, a.number, a.meterId, a.readingLayout, +a.id);
+            await this.qrService.addQr(b.name, t.name, a.number, a.meterId, a.readingLayout, +a.id);
           }
         }
       }
@@ -245,13 +246,14 @@ export class QrManagementComponent implements OnInit {
   printQr(qr: QrCode, tower: string, apartment: string): void {
     const w = window.open('', '_blank');
     if (!w) return;
+    const buildingLabel = qr.building || '';
     w.document.write(`
       <html><head><title>QR ${qr.qrCode}</title>
       <style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;}
       img{width:300px;height:300px;} h2,p{margin:4px 0;}</style></head>
       <body>
         <h2>Depto: ${qr.qrCode}</h2>
-        <p>${tower} — Depto ${apartment}</p>
+        <p>${buildingLabel} — ${tower} — Depto ${apartment}</p>
         ${qr.meterId ? `<p style="color:#888;font-size:12px">Medidor: ${qr.meterId}</p>` : ''}
         <img src="${qr.dataUrl}" />
         <script>setTimeout(()=>{window.print();},400);</script>
@@ -278,7 +280,7 @@ export class QrManagementComponent implements OnInit {
     <mat-dialog-content class="!flex !flex-col !items-center !py-4">
       <img [src]="data.dataUrl" class="w-72 h-72 bg-white rounded-lg p-3" />
       <p class="text-slate-300 text-sm mt-3 font-semibold">{{ data.qrCode }}</p>
-      <p class="text-slate-400 text-xs mt-1">{{ data.tower }} — Depto {{ data.apartment }}</p>
+      <p class="text-slate-400 text-xs mt-1">{{ data.building }} — {{ data.tower }} — Depto {{ data.apartment }}</p>
       @if (data.meterId) {
         <p class="text-slate-500 text-xs mt-1">Medidor: {{ data.meterId }}</p>
       }

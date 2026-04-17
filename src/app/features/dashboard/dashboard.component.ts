@@ -1,10 +1,16 @@
-import { Component, inject } from '@angular/core';
+import {
+  Component, inject, ViewChild, ElementRef,
+  AfterViewInit, OnDestroy, effect,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { DatePipe } from '@angular/common';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
 
 @Component({
   selector: 'app-dashboard',
@@ -41,6 +47,35 @@ import { DatePipe } from '@angular/common';
         }
       </div>
 
+      <!-- Charts row -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- Bar chart: monthly readings -->
+        <div class="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-6">
+          <h3 class="text-sm font-semibold text-white mb-4">Mediciones por mes</h3>
+          <div style="position:relative;height:220px">
+            <canvas #barChart></canvas>
+          </div>
+        </div>
+
+        <!-- Donut chart: by status -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 flex flex-col">
+          <h3 class="text-sm font-semibold text-white mb-4">Estado de mediciones</h3>
+          <div class="flex-1 flex items-center justify-center" style="position:relative;height:200px">
+            <canvas #donutChart></canvas>
+          </div>
+          <!-- Legend -->
+          <div class="flex justify-center gap-4 mt-4 flex-wrap">
+            @for (l of statusLegend; track l.label) {
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <span class="w-2.5 h-2.5 rounded-full" [style.background]="l.color"></span>
+                {{ l.label }}
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
       <!-- Recent Activity -->
       <div class="bg-slate-800 rounded-xl border border-slate-700">
         <div class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
@@ -71,16 +106,41 @@ import { DatePipe } from '@angular/common';
               </span>
             </div>
           }
+          @empty {
+            <p class="px-6 py-8 text-center text-slate-500 text-sm">Sin mediciones recientes</p>
+          }
         </div>
       </div>
     </div>
   `,
 })
-export class DashboardComponent {
+export class DashboardComponent implements AfterViewInit, OnDestroy {
   private readonly measurementService = inject(MeasurementService);
+
+  @ViewChild('barChart')   barChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('donutChart') donutChartRef!: ElementRef<HTMLCanvasElement>;
+
+  private barChart?: Chart;
+  private donutChart?: Chart;
 
   readonly summary = this.measurementService.summary;
   readonly recentMeasurements = this.measurementService.measurements().slice(0, 5);
+
+  readonly statusLegend = [
+    { label: 'Verificado', color: '#10b981' },
+    { label: 'Pendiente',  color: '#f59e0b' },
+    { label: 'Rechazado',  color: '#ef4444' },
+  ];
+
+  constructor() {
+    // Re-draw charts whenever measurements signal changes
+    effect(() => {
+      const measurements = this.measurementService.measurements();
+      if (measurements.length > 0 && this.barChart && this.donutChart) {
+        this._updateCharts();
+      }
+    });
+  }
 
   get summaryCards() {
     const s = this.summary();
@@ -113,5 +173,112 @@ export class DashboardComponent {
         valueColor: 'text-white',
       },
     ];
+  }
+
+  ngAfterViewInit(): void {
+    this._initCharts();
+    this._updateCharts();
+  }
+
+  ngOnDestroy(): void {
+    this.barChart?.destroy();
+    this.donutChart?.destroy();
+  }
+
+  private _initCharts(): void {
+    const gridColor = 'rgba(148,163,184,0.1)';
+    const labelColor = '#94a3b8';
+
+    // Bar chart
+    this.barChart = new Chart(this.barChartRef.nativeElement, {
+      type: 'bar',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            ticks: { color: labelColor, font: { size: 11 } },
+            grid: { color: gridColor },
+            border: { color: gridColor },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: labelColor, font: { size: 11 }, stepSize: 1 },
+            grid: { color: gridColor },
+            border: { color: gridColor },
+          },
+        },
+      },
+    });
+
+    // Donut chart
+    this.donutChart = new Chart(this.donutChartRef.nativeElement, {
+      type: 'doughnut',
+      data: { labels: ['Verificado', 'Pendiente', 'Rechazado'], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.label}: ${ctx.parsed}`,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  private _updateCharts(): void {
+    const measurements = this.measurementService.measurements();
+
+    // ── Bar chart: last 6 months ──
+    const now = new Date();
+    const monthLabels: string[] = [];
+    const monthCounts: number[] = [];
+    const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      monthLabels.push(`${months[d.getMonth()]} ${d.getFullYear()}`);
+      const count = measurements.filter(m => {
+        const md = new Date(m.captured_at);
+        return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
+      }).length;
+      monthCounts.push(count);
+    }
+
+    if (this.barChart) {
+      this.barChart.data.labels = monthLabels;
+      this.barChart.data.datasets = [{
+        data: monthCounts,
+        backgroundColor: 'rgba(34,211,238,0.25)',
+        borderColor: '#22d3ee',
+        borderWidth: 2,
+        borderRadius: 6,
+        hoverBackgroundColor: 'rgba(34,211,238,0.45)',
+      }];
+      this.barChart.update('none');
+    }
+
+    // ── Donut chart: by status ──
+    const verified = measurements.filter(m => m.status === 'verified').length;
+    const pending  = measurements.filter(m => m.status === 'pending_review').length;
+    const rejected = measurements.filter(m => m.status === 'rejected').length;
+
+    if (this.donutChart) {
+      this.donutChart.data.datasets = [{
+        data: [verified, pending, rejected],
+        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+        borderColor: '#1e293b',
+        borderWidth: 3,
+        hoverBorderWidth: 0,
+      }];
+      this.donutChart.update('none');
+    }
   }
 }

@@ -109,6 +109,37 @@ export class MeasurementService {
     return this._measurements().find(m => m.id === id);
   }
 
+  /** Returns all measurements for a given operator, sorted by date desc */
+  getMeasurementsByOperator(operatorId: string): Measurement[] {
+    return this._measurements()
+      .filter(m => m.operator_id === operatorId)
+      .sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
+  }
+
+  /**
+   * Groups measurements by year-month (last N months) and sums reading_value.
+   * Returns { labels: string[], values: number[] }
+   */
+  getMonthlyConsumption(measurements: Measurement[], months = 12): { labels: string[]; values: number[] } {
+    const now = new Date();
+    const mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const labels: string[] = [];
+    const values: number[] = [];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      labels.push(`${mNames[d.getMonth()]} ${d.getFullYear()}`);
+      const total = measurements
+        .filter(m => {
+          const md = new Date(m.captured_at);
+          return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
+        })
+        .reduce((sum, m) => sum + m.reading_value, 0);
+      values.push(Math.round(total * 100) / 100);
+    }
+    return { labels, values };
+  }
+
   deleteMeasurement(id: string): void {
     const endpoint = `${this.url}/${id}/`;
     this.http.delete(endpoint).subscribe({

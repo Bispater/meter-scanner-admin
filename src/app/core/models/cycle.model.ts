@@ -11,6 +11,8 @@ export interface MeasurementCycle {
   scheduled_date: string;
   deadline: string;
   status: CycleStatus;
+  enforce: boolean;
+  apartment_ids: number[];
   notes: string;
   created_at: string;
   total_apartments: number;

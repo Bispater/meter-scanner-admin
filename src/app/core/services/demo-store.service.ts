@@ -113,10 +113,10 @@ const SEED_MEASUREMENTS: ApiMeas[] = [
 
 const today = new Date();
 const SEED_CYCLES: MeasurementCycle[] = [
-  { id: '1', name: 'Ciclo Marzo 2026 — Los Robles', building: '1', building_name: 'Edificio Los Robles', year: 2026, month: 3, month_name: 'Marzo', scheduled_date: '2026-03-01', deadline: '2026-03-31', status: 'completed', notes: 'Ciclo completado sin incidencias.', created_at: '2026-03-01T08:00:00Z', total_apartments: 14, measured_count: 14, pending_count: 0, progress_pct: 100 },
-  { id: '2', name: `Ciclo Abril 2026 — Los Robles`,  building: '1', building_name: 'Edificio Los Robles', year: 2026, month: 4, month_name: 'Abril', scheduled_date: `${today.getFullYear()}-04-01`, deadline: `${today.getFullYear()}-04-30`, status: 'in_progress', notes: '', created_at: '2026-04-01T08:00:00Z', total_apartments: 14, measured_count: 10, pending_count: 4, progress_pct: 71 },
-  { id: '3', name: 'Ciclo Marzo 2026 — El Parque',   building: '2', building_name: 'Residencial El Parque', year: 2026, month: 3, month_name: 'Marzo', scheduled_date: '2026-03-01', deadline: '2026-03-31', status: 'closed', notes: 'Cerrado con 2 lecturas pendientes.', created_at: '2026-03-01T08:00:00Z', total_apartments: 10, measured_count: 8, pending_count: 2, progress_pct: 80 },
-  { id: '4', name: 'Ciclo Abril 2026 — El Parque',   building: '2', building_name: 'Residencial El Parque', year: 2026, month: 4, month_name: 'Abril', scheduled_date: `${today.getFullYear()}-04-01`, deadline: `${today.getFullYear()}-04-30`, status: 'pending', notes: '', created_at: '2026-04-01T08:00:00Z', total_apartments: 10, measured_count: 0, pending_count: 10, progress_pct: 0 },
+  { id: '1', name: 'Ciclo Marzo 2026 — Los Robles', building: '1', building_name: 'Edificio Los Robles', year: 2026, month: 3, month_name: 'Marzo', scheduled_date: '2026-03-01', deadline: '2026-03-31', status: 'completed', enforce: false, apartment_ids: [], notes: 'Ciclo completado sin incidencias.', created_at: '2026-03-01T08:00:00Z', total_apartments: 14, measured_count: 14, pending_count: 0, progress_pct: 100 },
+  { id: '2', name: `Ciclo Abril 2026 — Los Robles`,  building: '1', building_name: 'Edificio Los Robles', year: 2026, month: 4, month_name: 'Abril', scheduled_date: `${today.getFullYear()}-04-01`, deadline: `${today.getFullYear()}-04-30`, status: 'in_progress', enforce: false, apartment_ids: [], notes: '', created_at: '2026-04-01T08:00:00Z', total_apartments: 14, measured_count: 10, pending_count: 4, progress_pct: 71 },
+  { id: '3', name: 'Ciclo Marzo 2026 — El Parque',   building: '2', building_name: 'Residencial El Parque', year: 2026, month: 3, month_name: 'Marzo', scheduled_date: '2026-03-01', deadline: '2026-03-31', status: 'closed', enforce: false, apartment_ids: [], notes: 'Cerrado con 2 lecturas pendientes.', created_at: '2026-03-01T08:00:00Z', total_apartments: 10, measured_count: 8, pending_count: 2, progress_pct: 80 },
+  { id: '4', name: 'Ciclo Abril 2026 — El Parque',   building: '2', building_name: 'Residencial El Parque', year: 2026, month: 4, month_name: 'Abril', scheduled_date: `${today.getFullYear()}-04-01`, deadline: `${today.getFullYear()}-04-30`, status: 'pending', enforce: false, apartment_ids: [], notes: '', created_at: '2026-04-01T08:00:00Z', total_apartments: 10, measured_count: 0, pending_count: 10, progress_pct: 0 },
 ];
 
 // ── Service ──
@@ -341,11 +341,13 @@ export class DemoStoreService {
       scheduled_date: body.scheduled_date,
       deadline: body.deadline,
       status: body.status ?? 'pending',
+      enforce: body.enforce ?? false,
+      apartment_ids: body.apartment_ids ?? [],
       notes: body.notes ?? '',
       created_at: new Date().toISOString(),
-      total_apartments: totalApts,
+      total_apartments: body.apartment_ids?.length || totalApts,
       measured_count: 0,
-      pending_count: totalApts,
+      pending_count: body.apartment_ids?.length || totalApts,
       progress_pct: 0,
     };
     this._cycles.unshift(c);
