@@ -813,7 +813,7 @@ export class CycleProgressDialogComponent implements OnInit {
       import('../measurements/measurement-detail-dialog.component').then(m => {
         this.parentDialog.open(m.MeasurementDetailDialogComponent, {
           width: '600px',
-          panelClass: 'dark-dialog',
+          panelClass: 'measurement-detail-dialog',
           data: measurement,
         });
       });

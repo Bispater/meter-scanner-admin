@@ -93,6 +93,31 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; background-
   --mdc-dialog-supporting-text-color: #cbd5e1;
 }
 
+/* Solid surface for stacked / nested dialogs (confirm sobre otro modal) */
+.dark-dialog .mat-mdc-dialog-container .mdc-dialog__surface {
+  background-color: #1e293b !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Detalle de medición: contenedor transparente; el fondo lo da la tarjeta interna */
+.measurement-detail-dialog .mat-mdc-dialog-container {
+  --mdc-dialog-container-color: transparent;
+  background: transparent !important;
+  padding: 0;
+  box-shadow: none !important;
+}
+
+.measurement-detail-dialog .mat-mdc-dialog-container .mdc-dialog__surface {
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+/* Confirmación abierta encima de otro modal */
+.cdk-overlay-pane.nested-confirm-dialog {
+  z-index: 1100 !important;
+}
+
 /* ── Toast notification animations ── */
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(100%); }

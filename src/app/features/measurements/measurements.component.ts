@@ -11,6 +11,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
+import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { Measurement } from '../../core/models/measurement.model';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -34,6 +35,7 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
     MatIconModule,
     MatChipsModule,
     MatTooltipModule,
+    MatDatepickerModule,
   ],
   template: `
     <div class="space-y-5">
@@ -69,8 +71,8 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
           </mat-form-field>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <mat-form-field appearance="outline" class="dense-field">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
+          <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Torre</mat-label>
             <mat-select [(ngModel)]="filterTower" (ngModelChange)="applyFilters()">
               <mat-option value="">Todas</mat-option>
@@ -80,12 +82,12 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             </mat-select>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="dense-field">
+          <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Departamento</mat-label>
-            <input matInput [(ngModel)]="filterApartment" (ngModelChange)="applyFilters()" placeholder="Ej: 101" />
+            <input matInput [(ngModel)]="filterApartment" (ngModelChange)="applyFilters()" />
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="dense-field">
+          <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Estado</mat-label>
             <mat-select [(ngModel)]="filterStatus" (ngModelChange)="applyFilters()">
               <mat-option value="">Todos</mat-option>
@@ -95,14 +97,20 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
             </mat-select>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="dense-field">
+          <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Desde</mat-label>
-            <input matInput type="date" [(ngModel)]="filterDateFrom" (ngModelChange)="applyFilters()" />
+            <input matInput [matDatepicker]="fromPicker" [(ngModel)]="filterDateFromObj"
+                   (dateChange)="onDateFromChange()" readonly />
+            <mat-datepicker-toggle matIconSuffix [for]="fromPicker"></mat-datepicker-toggle>
+            <mat-datepicker #fromPicker></mat-datepicker>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="dense-field">
+          <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Hasta</mat-label>
-            <input matInput type="date" [(ngModel)]="filterDateTo" (ngModelChange)="applyFilters()" />
+            <input matInput [matDatepicker]="toPicker" [(ngModel)]="filterDateToObj"
+                   [min]="filterDateFromObj" (dateChange)="onDateToChange()" readonly />
+            <mat-datepicker-toggle matIconSuffix [for]="toPicker"></mat-datepicker-toggle>
+            <mat-datepicker #toPicker></mat-datepicker>
           </mat-form-field>
         </div>
 
@@ -218,7 +226,7 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
                 @if (row.photo_url) {
                   <button mat-icon-button class="!text-slate-400 hover:!text-indigo-300"
                           (click)="openImage($event, row)" matTooltip="Abrir foto">
-                    <mat-icon style="font-size:18px;width:18px;height:18px;">zoom_in</mat-icon>
+                    <mat-icon style="font-size:18px;width:18px;height:18px;">image</mat-icon>
                   </button>
                 }
                 <button mat-icon-button class="!text-slate-400 hover:!text-cyan-400" (click)="openDetail(row)" matTooltip="Ver detalle">
@@ -256,7 +264,18 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
   `,
   styles: [`
     :host { display: block; }
-    ::ng-deep .dense-field .mat-mdc-form-field-infix { padding-top: 8px !important; padding-bottom: 8px !important; min-height: 40px !important; }
+    ::ng-deep .dense-field .mat-mdc-form-field-infix {
+      padding-top: 8px !important;
+      padding-bottom: 8px !important;
+      min-height: 40px !important;
+    }
+    ::ng-deep .dense-field .mat-mdc-text-field-wrapper {
+      height: 48px !important;
+    }
+    ::ng-deep .dense-field .mat-mdc-form-field-flex {
+      height: 48px !important;
+      align-items: center !important;
+    }
     ::ng-deep .mat-mdc-header-cell { white-space: nowrap; }
     ::ng-deep .mat-sort-header-arrow { color: #94a3b8 !important; }
     ::ng-deep .mat-mdc-paginator { border-radius: 0 0 12px 12px; }
@@ -278,6 +297,9 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterDateTo = '';
   filterCycle = '';
 
+  filterDateFromObj: Date | null = null;
+  filterDateToObj: Date | null = null;
+
   readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'time_ago', 'status', 'actions'];
 
   readonly filteredData = signal<Measurement[]>([]);
@@ -285,12 +307,17 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   readonly pageIndex = signal(0);
 
   ngOnInit(): void {
+    const today = new Date();
+    const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+    this.filterDateFromObj = oneMonthAgo;
+    this.filterDateToObj = today;
+    this.filterDateFrom = this._formatDate(oneMonthAgo);
+    this.filterDateTo = this._formatDate(today);
+
     this.measurementService.onLoaded(() => this.applyFilters());
-    // If data already loaded, apply filters now
     if (this.measurementService.measurements().length > 0) {
       this.applyFilters();
     }
-    // Auto-refresh every 30 seconds
     this.refreshInterval = setInterval(() => this.refresh(), 30000);
   }
 
@@ -327,14 +354,35 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     if (!cycleId) {
       this.filterDateFrom = '';
       this.filterDateTo = '';
+      this.filterDateFromObj = null;
+      this.filterDateToObj = null;
     } else {
       const cycle = this.cycleService.cycles().find(c => c.id === cycleId);
       if (cycle) {
         this.filterDateFrom = cycle.scheduled_date;
         this.filterDateTo = cycle.deadline;
+        this.filterDateFromObj = new Date(cycle.scheduled_date + 'T12:00:00');
+        this.filterDateToObj = new Date(cycle.deadline + 'T12:00:00');
       }
     }
     this.applyFilters();
+  }
+
+  onDateFromChange(): void {
+    this.filterDateFrom = this.filterDateFromObj ? this._formatDate(this.filterDateFromObj) : '';
+    this.applyFilters();
+  }
+
+  onDateToChange(): void {
+    this.filterDateTo = this.filterDateToObj ? this._formatDate(this.filterDateToObj) : '';
+    this.applyFilters();
+  }
+
+  private _formatDate(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
   clearFilters(): void {
@@ -343,6 +391,8 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.filterStatus = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
+    this.filterDateFromObj = null;
+    this.filterDateToObj = null;
     this.filterCycle = '';
     this.applyFilters();
   }
@@ -372,13 +422,13 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this._dialogOpen = true;
     const ref = this.dialog.open(MeasurementDetailDialogComponent, {
       data: measurement,
-      panelClass: 'custom-dialog',
+      panelClass: 'measurement-detail-dialog',
       maxWidth: '900px',
       width: '96vw',
     });
     ref.afterClosed().subscribe(result => {
       setTimeout(() => { this._dialogOpen = false; }, 400);
-      if (result === 'deleted') {
+      if (result === 'deleted' || result === 'updated') {
         setTimeout(() => this.applyFilters(), 300);
       }
     });

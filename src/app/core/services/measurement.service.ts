@@ -140,6 +140,33 @@ export class MeasurementService {
     return { labels, values };
   }
 
+  updateMeasurementStatus(id: string, status: string): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/`;
+    console.log('[MEASUREMENTS] PATCH', endpoint, { status });
+    return new Promise(resolve => {
+      this.http.patch<ApiMeasurement>(endpoint, { status }).subscribe({
+        next: res => {
+          console.log('[MEASUREMENTS] Status updated:', res);
+          const mapped = this._mapMeasurement(res);
+          const updated = this._measurements().map(m => m.id === id ? mapped : m);
+          this._measurements.set(updated);
+          this._computeSummary(updated);
+          this.notify.success(
+            status === 'verified' ? 'Medición validada' :
+            status === 'rejected' ? 'Medición rechazada' :
+            'Estado actualizado a pendiente'
+          );
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Status update error:', err);
+          this.notify.error('Error al actualizar estado');
+          resolve(null);
+        },
+      });
+    });
+  }
+
   deleteMeasurement(id: string): void {
     const endpoint = `${this.url}/${id}/`;
     this.http.delete(endpoint).subscribe({

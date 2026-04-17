@@ -34,7 +34,7 @@ export interface ConfirmDialogData {
         <button mat-flat-button [mat-dialog-close]="true"
                 class="cursor-pointer !font-semibold"
                 [class]="confirmBtnClass">
-          {{ data.confirmText || 'Eliminar' }}
+          {{ data.confirmText || 'Confirmar' }}
         </button>
       </div>
     </div>
