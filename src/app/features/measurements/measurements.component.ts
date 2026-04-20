@@ -17,8 +17,11 @@ import { Measurement } from '../../core/models/measurement.model';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CycleService } from '../../core/services/cycle.service';
 import { MeasurementDetailDialogComponent } from './measurement-detail-dialog.component';
+import { MeasurementDetailDialogData } from './measurement-detail-dialog.types';
+import { NotificationService } from '../../core/services/notification.service';
 import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-format';
 
 @Component({
   selector: 'app-measurements',
@@ -62,6 +65,16 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
                   (click)="setTrashMode(true)">
             <mat-icon>delete_outline</mat-icon> Papelera
           </button>
+          @if (!showTrash()) {
+            <button
+              mat-stroked-button
+              class="!border-amber-500/40 !text-amber-300 cursor-pointer"
+              (click)="openPendingReviewAlbum()"
+              matTooltip="Recorrer solo las pendientes y validar sin cerrar el panel"
+            >
+              <mat-icon>view_carousel</mat-icon> Revisar pendientes
+            </button>
+          }
           <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="refresh()" matTooltip="Actualizar datos">
             <mat-icon>refresh</mat-icon> Actualizar
           </button>
@@ -75,12 +88,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           <mat-icon class="text-slate-400" style="font-size:18px;width:18px;height:18px;">filter_list</mat-icon>
           <span class="text-sm font-semibold text-slate-300">Filtros</span>
         </div>
-        <!-- Cycle quick-filter -->
-        <div class="mb-3">
-          <mat-form-field appearance="outline" class="dense-field w-full md:w-72">
-            <mat-label>Ciclo de Medición</mat-label>
+        <!-- Ciclo: opcional; filtra por el ciclo real de la medición (no solo fechas). -->
+        <div class="mb-3 flex flex-col gap-1">
+          <mat-form-field appearance="outline" class="dense-field w-full md:w-[28rem]">
+            <mat-label>Ciclo (opcional)</mat-label>
             <mat-select [(ngModel)]="filterCycle" (ngModelChange)="onCycleFilterChange($event)">
-              <mat-option value="">Sin filtro de ciclo</mat-option>
+              <mat-option value="">Todos los ciclos</mat-option>
               @for (c of cycleService.cycles(); track c.id) {
                 <mat-option [value]="c.id">
                   {{ c.name }} — {{ c.building_name }}
@@ -88,9 +101,23 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
               }
             </mat-select>
           </mat-form-field>
+          <p class="text-xs text-slate-500 max-w-xl">
+            Si eliges un ciclo, se muestran solo mediciones <strong class="text-slate-400">asignadas a ese ciclo</strong> en el sistema.
+            Las fechas abajo son opcionales para acotar por día de captura.
+          </p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-start">
+          <mat-form-field appearance="outline" class="dense-field w-full">
+            <mat-label>Edificio</mat-label>
+            <mat-select [(ngModel)]="filterBuilding" (ngModelChange)="applyFilters()">
+              <mat-option value="">Todos</mat-option>
+              @for (b of buildings(); track b) {
+                <mat-option [value]="b">{{ b }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
           <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Torre</mat-label>
             <mat-select [(ngModel)]="filterTower" (ngModelChange)="applyFilters()">
@@ -186,6 +213,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
               </td>
             </ng-container>
 
+            <!-- Building -->
+            <ng-container matColumnDef="building_name">
+              <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Edificio</th>
+              <td mat-cell *matCellDef="let row" class="!bg-transparent !text-slate-200 !border-b-slate-700/50">
+                <span class="font-medium text-slate-100">{{ row.building_name || '—' }}</span>
+              </td>
+            </ng-container>
+
             <!-- Tower -->
             <ng-container matColumnDef="tower">
               <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Torre</th>
@@ -214,7 +249,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
             <ng-container matColumnDef="reading_value">
               <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Lectura (m³)</th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !border-b-slate-700/50">
-                <span class="text-cyan-400 font-bold">{{ formatMeterReading(row.reading_value) }}</span>
+                <span class="text-cyan-400 font-bold">{{ formatMeterReadingDisplay(row.reading_value, row.reading_layout) }}</span>
                 <span class="text-slate-500 text-xs ml-1">m³</span>
               </td>
             </ng-container>
@@ -285,6 +320,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
                 } @else { <span class="text-slate-600">—</span> }
               </td>
             </ng-container>
+            <ng-container matColumnDef="building_name">
+              <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Edificio</th>
+              <td mat-cell *matCellDef="let row">{{ row.building_name || '—' }}</td>
+            </ng-container>
             <ng-container matColumnDef="tower">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Torre</th>
               <td mat-cell *matCellDef="let row">{{ row.tower }}</td>
@@ -299,7 +338,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
             </ng-container>
             <ng-container matColumnDef="reading_value">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Lectura</th>
-              <td mat-cell *matCellDef="let row" class="text-cyan-400 font-bold">{{ formatMeterReading(row.reading_value) }}</td>
+              <td mat-cell *matCellDef="let row" class="text-cyan-400 font-bold">{{ formatMeterReadingDisplay(row.reading_value, row.reading_layout) }}</td>
             </ng-container>
             <ng-container matColumnDef="captured_at">
               <th mat-header-cell *matHeaderCellDef class="!bg-slate-800 !text-slate-400 !text-xs">Captura</th>
@@ -368,15 +407,19 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   `],
 })
 export class MeasurementsComponent implements OnInit, OnDestroy {
+  readonly formatMeterReadingDisplay = formatMeterReadingDisplay;
   private readonly measurementService = inject(MeasurementService);
   readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
+  private readonly notify = inject(NotificationService);
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _dialogOpen = false;
 
   readonly towers = this.measurementService.towers;
+  readonly buildings = this.measurementService.buildings;
 
   filterTower = '';
+  filterBuilding = '';
   filterApartment = '';
   filterStatus = '';
   filterDateFrom = '';
@@ -386,8 +429,8 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterDateFromObj: Date | null = null;
   filterDateToObj: Date | null = null;
 
-  readonly displayedColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'time_ago', 'status', 'actions'];
-  readonly trashColumns = ['photo', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'deleted_meta', 'actions_trash'];
+  readonly displayedColumns = ['photo', 'building_name', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'time_ago', 'status', 'actions'];
+  readonly trashColumns = ['photo', 'building_name', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'deleted_meta', 'actions_trash'];
 
   readonly showTrash = signal(false);
 
@@ -400,12 +443,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   );
 
   ngOnInit(): void {
-    const today = new Date();
-    const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-    this.filterDateFromObj = oneMonthAgo;
-    this.filterDateToObj = today;
-    this.filterDateFrom = this._formatDate(oneMonthAgo);
-    this.filterDateTo = this._formatDate(today);
+    // Sin rango por defecto: se listan todas las mediciones cargadas; fechas y ciclo son opcionales.
 
     this.measurementService.onLoaded(() => this.applyFilters());
     if (this.measurementService.measurements().length > 0) {
@@ -443,11 +481,13 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   });
 
   readonly hasActiveFilters = computed(() =>
-    !!(this.filterTower || this.filterApartment || this.filterStatus || this.filterDateFrom || this.filterDateTo || this.filterCycle)
+    !!(this.filterTower || this.filterBuilding || this.filterApartment || this.filterStatus || this.filterDateFrom || this.filterDateTo || this.filterCycle)
   );
 
   applyFilters(): void {
     const result = this.measurementService.getFilteredMeasurements({
+      cycleId: this.filterCycle || undefined,
+      building: this.filterBuilding || undefined,
       tower: this.filterTower || undefined,
       apartment: this.filterApartment || undefined,
       status: this.filterStatus || undefined,
@@ -458,21 +498,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.pageIndex.set(0);
   }
 
-  onCycleFilterChange(cycleId: string): void {
-    if (!cycleId) {
-      this.filterDateFrom = '';
-      this.filterDateTo = '';
-      this.filterDateFromObj = null;
-      this.filterDateToObj = null;
-    } else {
-      const cycle = this.cycleService.cycles().find(c => c.id === cycleId);
-      if (cycle) {
-        this.filterDateFrom = cycle.scheduled_date;
-        this.filterDateTo = cycle.deadline;
-        this.filterDateFromObj = new Date(cycle.scheduled_date + 'T12:00:00');
-        this.filterDateToObj = new Date(cycle.deadline + 'T12:00:00');
-      }
-    }
+  onCycleFilterChange(_cycleId: string): void {
     this.applyFilters();
   }
 
@@ -495,6 +521,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
 
   clearFilters(): void {
     this.filterTower = '';
+    this.filterBuilding = '';
     this.filterApartment = '';
     this.filterStatus = '';
     this.filterDateFrom = '';
@@ -529,16 +556,41 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   openDetail(measurement: Measurement): void {
+    let data: MeasurementDetailDialogData = { measurement };
+    if (measurement.status === 'pending_review') {
+      const pending = this.filteredData()
+        .filter(m => m.status === 'pending_review')
+        .sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
+      data = { measurement, reviewQueue: pending };
+    }
+    this.openDetailDialog(data);
+  }
+
+  /** Modo álbum: misma lista de pendientes que ves con los filtros actuales. */
+  openPendingReviewAlbum(): void {
+    const pending = this.filteredData()
+      .filter(m => m.status === 'pending_review')
+      .sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
+    if (pending.length === 0) {
+      this.notify.info('No hay mediciones pendientes con los filtros actuales.');
+      return;
+    }
+    this.openDetailDialog({ measurement: pending[0], reviewQueue: pending });
+  }
+
+  private openDetailDialog(data: MeasurementDetailDialogData): void {
     if (this._dialogOpen) return;
     this._dialogOpen = true;
     const ref = this.dialog.open(MeasurementDetailDialogComponent, {
-      data: measurement,
+      data,
       panelClass: 'measurement-detail-dialog',
       maxWidth: '900px',
       width: '96vw',
     });
     ref.afterClosed().subscribe(result => {
-      setTimeout(() => { this._dialogOpen = false; }, 400);
+      setTimeout(() => {
+        this._dialogOpen = false;
+      }, 400);
       if (result === 'deleted' || result === 'updated') {
         setTimeout(() => this.applyFilters(), 300);
       }
@@ -596,11 +648,4 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     return `${months} meses`;
   }
 
-  formatMeterReading(raw: number | string): string {
-    const integerDigits = String(raw).split('.')[0].replace(/\D/g, '');
-    if (!integerDigits) return String(raw);
-    const right = integerDigits.slice(-4).padStart(4, '0');
-    const left = integerDigits.slice(0, -4).padStart(5, '0');
-    return `${left},${right}`;
-  }
 }

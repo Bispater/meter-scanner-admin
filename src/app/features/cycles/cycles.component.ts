@@ -814,7 +814,7 @@ export class CycleProgressDialogComponent implements OnInit {
         this.parentDialog.open(m.MeasurementDetailDialogComponent, {
           width: '600px',
           panelClass: 'measurement-detail-dialog',
-          data: measurement,
+          data: { measurement },
         });
       });
     }

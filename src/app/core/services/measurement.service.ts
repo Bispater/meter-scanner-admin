@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { finalize } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
-import { Measurement, Summary } from '../models/measurement.model';
+import { Measurement, MeasurementAuditEntry, Summary } from '../models/measurement.model';
 import { environment } from '../../../environments/environment';
 import { NotificationService } from './notification.service';
 
@@ -9,7 +9,11 @@ interface ApiMeasurement {
   id: number;
   apartment: number;
   operator: number | null;
-  reading_value: string;
+  cycle: number | null;
+  reading_value: string | null;
+  reading_layout?: string;
+  ai_analysis_status?: string;
+  ai_agrees_with_operator?: boolean | null;
   unit: string;
   photo: string | null;
   photo_url: string | null;
@@ -24,8 +28,22 @@ interface ApiMeasurement {
   apartment_number: string;
   meter_id: string;
   operator_name: string | null;
+  cycle_name?: string | null;
+  cycle_building_name?: string | null;
+  ocr_value?: string;
+  audit_logs?: ApiAudit[];
   deleted_at?: string | null;
   retention_days_remaining?: number | null;
+}
+
+interface ApiAudit {
+  id: number;
+  field_name: string;
+  old_value: string;
+  new_value: string;
+  note: string;
+  created_at: string;
+  edited_by_name: string | null;
 }
 
 interface ApiPage<T> { count: number; results: T[]; }
@@ -52,6 +70,11 @@ export class MeasurementService {
   readonly towers = computed(() => {
     const all = this._measurements();
     return [...new Set(all.map(m => m.tower))].sort();
+  });
+
+  readonly buildings = computed(() => {
+    const all = this._measurements();
+    return [...new Set(all.map(m => m.building_name).filter(Boolean))].sort();
   });
 
   private _onLoadedCallbacks: (() => void)[] = [];
@@ -95,9 +118,20 @@ export class MeasurementService {
     dateFrom?: string;
     dateTo?: string;
     status?: string;
+    /** Filtra por FK de ciclo (evita mezclar edificios al elegir un ciclo en el desplegable) */
+    cycleId?: string;
+    building?: string;
   }): Measurement[] {
     let result = this._measurements();
 
+    if (filters.cycleId) {
+      const want = String(filters.cycleId);
+      result = result.filter(m => m.cycle_id != null && String(m.cycle_id) === want);
+    }
+    if (filters.building) {
+      const q = filters.building.toLowerCase();
+      result = result.filter(m => m.building_name.toLowerCase().includes(q));
+    }
     if (filters.tower) {
       result = result.filter(m => m.tower === filters.tower);
     }
@@ -124,8 +158,59 @@ export class MeasurementService {
     );
   }
 
-  getMeasurementById(id: string): Measurement | undefined {
+  getById(id: string): Measurement | undefined {
     return this._measurements().find(m => m.id === id);
+  }
+
+  /** @deprecated usar getById */
+  getMeasurementById(id: string): Measurement | undefined {
+    return this.getById(id);
+  }
+
+  /** Detalle con historial de auditoría (admin). */
+  fetchDetail(id: string): Promise<Measurement | null> {
+    return new Promise(resolve => {
+      this.http.get<ApiMeasurement>(`${this.url}/${id}/`).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          const list = [...this._measurements().filter(m => m.id !== id), mapped];
+          list.sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
+          this._measurements.set(list);
+          this._computeSummary(list);
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Detail error:', err);
+          this.notify.error('Error al cargar el detalle');
+          resolve(null);
+        },
+      });
+    });
+  }
+
+  /** Edición de lectura / estado por administrador (genera auditoría en BD). */
+  patchAdminFields(
+    id: string,
+    body: { reading_value?: number; status?: string; edit_note?: string },
+  ): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/`;
+    return new Promise(resolve => {
+      this.http.patch<ApiMeasurement>(endpoint, body).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          const updated = this._measurements().map(m => (m.id === id ? mapped : m));
+          this._measurements.set(updated);
+          this._computeSummary(updated);
+          this.notify.success('Medición actualizada');
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Admin patch error:', err);
+          this.notify.error('No se pudo guardar la edición');
+          resolve(null);
+        },
+      });
+    });
   }
 
   /** Returns all measurements for a given operator, sorted by date desc */
@@ -153,7 +238,11 @@ export class MeasurementService {
           const md = new Date(m.captured_at);
           return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
         })
-        .reduce((sum, m) => sum + m.reading_value, 0);
+        .reduce(
+          (sum, m) =>
+            sum + (m.reading_value != null && !Number.isNaN(m.reading_value) ? m.reading_value : 0),
+          0,
+        );
       values.push(Math.round(total * 100) / 100);
     }
     return { labels, values };
@@ -246,15 +335,32 @@ export class MeasurementService {
   // ── Mapper (API → Frontend) ──
 
   private _mapMeasurement(m: ApiMeasurement): Measurement {
+    const audit: MeasurementAuditEntry[] | undefined = m.audit_logs?.map(a => ({
+      id: a.id,
+      field_name: a.field_name,
+      old_value: a.old_value,
+      new_value: a.new_value,
+      note: a.note,
+      created_at: a.created_at,
+      edited_by_name: a.edited_by_name,
+    }));
     return {
       id: String(m.id),
       meter_id: m.meter_id,
+      building_name: m.building_name || '',
       tower: m.tower_name,
       apartment: m.apartment_number,
-      reading_value: parseFloat(m.reading_value),
+      reading_value:
+        m.reading_value != null && String(m.reading_value).length > 0
+          ? parseFloat(String(m.reading_value))
+          : null,
+      reading_layout: m.reading_layout === 'B' ? 'B' : 'A',
+      ai_analysis_status: (m.ai_analysis_status as Measurement['ai_analysis_status']) ?? 'complete',
+      ai_agrees_with_operator: m.ai_agrees_with_operator ?? null,
       unit: m.unit || 'm3',
       captured_at: m.captured_at,
       operator_id: m.operator ? String(m.operator) : '',
+      operator_name: m.operator_name ?? undefined,
       photo_url: m.photo_url || m.photo || '',
       status: m.status as Measurement['status'],
       meter_type: m.meter_type as Measurement['meter_type'],
@@ -262,6 +368,11 @@ export class MeasurementService {
         lat: m.latitude ? parseFloat(m.latitude) : 0,
         lng: m.longitude ? parseFloat(m.longitude) : 0,
       },
+      cycle_id: m.cycle != null ? String(m.cycle) : null,
+      cycle_name: m.cycle_name ?? null,
+      cycle_building_name: m.cycle_building_name ?? null,
+      ocr_value: m.ocr_value,
+      audit_logs: audit,
       deleted_at: m.deleted_at ?? undefined,
       retention_days_remaining: m.retention_days_remaining ?? undefined,
     };
@@ -271,7 +382,10 @@ export class MeasurementService {
     const today = new Date().toISOString().slice(0, 10);
     const todayMeasurements = measurements.filter(m => m.captured_at.slice(0, 10) === today);
     const pending = measurements.filter(m => m.status === 'pending_review').length;
-    const total = measurements.reduce((sum, m) => sum + m.reading_value, 0);
+    const total = measurements.reduce(
+      (sum, m) => sum + (m.reading_value != null && !Number.isNaN(m.reading_value) ? m.reading_value : 0),
+      0,
+    );
 
     this._summary.set({
       total_readings_today: todayMeasurements.length,
