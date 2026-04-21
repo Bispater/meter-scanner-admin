@@ -258,12 +258,14 @@ export class QrManagementComponent {
   });
 
   constructor() {
+    // toObservable() MUST be called synchronously within the injection context
+    toObservable(this.buildingService.buildings)
+      .pipe(debounceTime(350), takeUntilDestroyed())
+      .subscribe(() => void this.scheduleSync());
+
     void (async () => {
       await this.qrService.init();
       await this.runSync();
-      toObservable(this.buildingService.buildings)
-        .pipe(debounceTime(350), takeUntilDestroyed())
-        .subscribe(() => void this.scheduleSync());
     })();
   }
 

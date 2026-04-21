@@ -130,11 +130,18 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
 
               <!-- Right: actions -->
               <div class="flex flex-col gap-2 shrink-0 items-end">
-                <button mat-stroked-button class="!border-slate-600 !text-slate-300 text-xs cursor-pointer"
-                        (click)="openProgress(cycle)">
-                  <mat-icon style="font-size:16px;width:16px;height:16px;">visibility</mat-icon>
-                  Ver Progreso
-                </button>
+                <div class="flex items-center gap-2">
+                  <button mat-stroked-button class="!border-slate-600 !text-slate-300 text-xs cursor-pointer"
+                          (click)="openProgress(cycle)">
+                    <mat-icon style="font-size:16px;width:16px;height:16px;">visibility</mat-icon>
+                    Ver Progreso
+                  </button>
+                  <button type="button" matTooltip="Eliminar ciclo"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                          (click)="confirmDelete(cycle)">
+                    <mat-icon style="font-size:18px;width:18px;height:18px;line-height:1;">delete_outline</mat-icon>
+                  </button>
+                </div>
                 <mat-select class="text-xs !bg-slate-700 rounded px-2 py-1 cursor-pointer"
                             [value]="cycle.status"
                             (valueChange)="onStatusChange(cycle, $event)"
@@ -215,6 +222,17 @@ export class CyclesComponent implements OnInit {
     if (s !== cycle.status) {
       this.cycleService.updateCycleStatus(cycle.id, s);
     }
+  }
+
+  confirmDelete(cycle: MeasurementCycle): void {
+    const ref = this.dialog.open(ConfirmDeleteCycleDialogComponent, {
+      width: '400px',
+      panelClass: 'dark-dialog',
+      data: { name: cycle.name },
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (confirmed) this.cycleService.deleteCycle(cycle.id);
+    });
   }
 
   openCreate(): void {
@@ -902,4 +920,35 @@ export class CycleProgressDialogComponent implements OnInit {
 })
 export class ConfirmEnforcementDialogComponent {
   readonly data = inject<{ enabling: boolean; cycleName?: string }>(MAT_DIALOG_DATA);
+}
+
+/* ─── Confirm Delete Cycle Dialog ─── */
+@Component({
+  selector: 'app-confirm-delete-cycle-dialog',
+  standalone: true,
+  imports: [MatDialogModule, MatButtonModule, MatIconModule],
+  template: `
+    <div class="p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+          <mat-icon class="text-red-400" style="font-size:20px;width:20px;height:20px;">delete_forever</mat-icon>
+        </div>
+        <h2 class="text-lg font-bold text-white m-0">Eliminar ciclo</h2>
+      </div>
+      <p class="text-sm text-slate-300 leading-relaxed mb-2">
+        ¿Estás seguro de que deseas eliminar el ciclo
+        <strong class="text-white">"{{ data.name }}"</strong>?
+      </p>
+      <p class="text-xs text-slate-500 mb-5">Esta acción no se puede deshacer.</p>
+      <div class="flex justify-end gap-2">
+        <button mat-button mat-dialog-close class="!text-slate-400">Cancelar</button>
+        <button mat-flat-button [mat-dialog-close]="true" class="!bg-red-500 !text-white !font-semibold">
+          <mat-icon>delete_forever</mat-icon> Eliminar
+        </button>
+      </div>
+    </div>
+  `,
+})
+export class ConfirmDeleteCycleDialogComponent {
+  readonly data = inject<{ name: string }>(MAT_DIALOG_DATA);
 }
