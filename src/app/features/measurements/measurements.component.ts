@@ -12,6 +12,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
 import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatMenuModule } from '@angular/material/menu';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { Measurement } from '../../core/models/measurement.model';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -22,6 +23,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-format';
+import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/export.service';
 
 @Component({
   selector: 'app-measurements',
@@ -40,6 +42,7 @@ import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-form
     MatChipsModule,
     MatTooltipModule,
     MatDatepickerModule,
+    MatMenuModule,
   ],
   template: `
     <div class="space-y-5">
@@ -75,6 +78,23 @@ import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-form
               <mat-icon>view_carousel</mat-icon> Revisar pendientes
             </button>
           }
+          <button mat-stroked-button
+                  class="!border-slate-600 !text-slate-300 cursor-pointer"
+                  [matMenuTriggerFor]="exportMenu"
+                  [disabled]="displayData().length === 0"
+                  matTooltip="Exportar mediciones visibles">
+            <mat-icon>download</mat-icon> Exportar
+          </button>
+          <mat-menu #exportMenu="matMenu">
+            <button mat-menu-item (click)="exportMeasurements('xlsx')">
+              <mat-icon>grid_on</mat-icon>
+              <span>Exportar a XLSX</span>
+            </button>
+            <button mat-menu-item (click)="exportMeasurements('csv')">
+              <mat-icon>description</mat-icon>
+              <span>Exportar a CSV</span>
+            </button>
+          </mat-menu>
           <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="refresh()" matTooltip="Actualizar datos">
             <mat-icon>refresh</mat-icon> Actualizar
           </button>
@@ -412,6 +432,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotificationService);
+  private readonly exportService = inject(ExportService);
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _dialogOpen = false;
 
@@ -459,6 +480,41 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   refresh(): void {
     this.measurementService.loadAll();
     this.measurementService.loadTrash();
+  }
+
+  exportMeasurements(format: ExportFormat): void {
+    const statusLabel: Record<Measurement['status'], string> = {
+      verified: 'Validada',
+      pending_review: 'Pendiente',
+      rejected: 'Rechazada',
+    };
+    const meterTypeLabel: Record<Measurement['meter_type'], string> = {
+      analog: 'Analógico',
+      digital_drum: 'Digital tambor',
+      digital: 'Digital',
+    };
+    const columns: ExportColumn<Measurement>[] = [
+      { header: 'ID', key: 'id' },
+      { header: 'Edificio', key: 'building_name' },
+      { header: 'Torre', key: 'tower' },
+      { header: 'Depto', key: 'apartment' },
+      { header: 'Medidor', key: 'meter_id' },
+      { header: 'Lectura', key: 'reading_value' },
+      { header: 'Unidad', key: 'unit' },
+      { header: 'Estado', key: 'status', format: v => statusLabel[v as Measurement['status']] ?? String(v) },
+      { header: 'Tipo medidor', key: 'meter_type', format: v => meterTypeLabel[v as Measurement['meter_type']] ?? String(v) },
+      { header: 'Operador', key: row => row.operator_name ?? row.operator_id },
+      { header: 'Capturada', key: 'captured_at' },
+      { header: 'Ciclo', key: row => row.cycle_name ?? '' },
+      { header: 'OCR (IA)', key: row => row.ocr_value ?? '' },
+      { header: 'IA coincide', key: row => row.ai_agrees_with_operator == null ? '' : (row.ai_agrees_with_operator ? 'Sí' : 'No') },
+      { header: 'Latitud', key: row => row.location_coords?.lat ?? '' },
+      { header: 'Longitud', key: row => row.location_coords?.lng ?? '' },
+      { header: 'Foto URL', key: 'photo_url' },
+    ];
+    const prefix = this.showTrash() ? 'mediciones_papelera' : 'mediciones';
+    const fileName = this.exportService.buildFileName(prefix);
+    this.exportService.export(this.displayData(), columns, fileName, format, 'Mediciones');
   }
 
   setTrashMode(v: boolean): void {

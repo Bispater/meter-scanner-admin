@@ -47,7 +47,23 @@ export interface Measurement {
   /** Solo en papelera (API) */
   deleted_at?: string;
   retention_days_remaining?: number;
+  /** Trazabilidad de validación / rechazo */
+  validated_by?: string | null;
+  validated_by_name?: string | null;
+  validated_at?: string | null;
+  rejected_by?: string | null;
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
+  rejection_category?: RejectionCategory | '';
+  rejection_reason?: string;
 }
+
+export type RejectionCategory = 'photo' | 'reading';
+
+export const REJECTION_CATEGORY_LABEL: Record<RejectionCategory, string> = {
+  photo: 'Foto',
+  reading: 'Medición manual incorrecta',
+};
 
 export interface Summary {
   total_readings_today: number;

@@ -15,7 +15,9 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { CycleService } from '../../core/services/cycle.service';
 import { BuildingService } from '../../core/services/building.service';
 import { MeasurementService } from '../../core/services/measurement.service';
-import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from '../../core/models/cycle.model';
+import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse, CycleStatus } from '../../core/models/cycle.model';
+import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/export.service';
+import { MatMenuModule } from '@angular/material/menu';
 
 /* ─────────────────────────────────────────
    Main Cycles Component
@@ -23,7 +25,7 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
 @Component({
   selector: 'app-cycles',
   standalone: true,
-  imports: [DatePipe, FormsModule, MatButtonModule, MatIconModule, MatDialogModule, MatTooltipModule, MatSelectModule, MatSlideToggleModule],
+  imports: [DatePipe, FormsModule, MatButtonModule, MatIconModule, MatDialogModule, MatTooltipModule, MatSelectModule, MatSlideToggleModule, MatMenuModule],
   template: `
     <div class="space-y-5">
       <!-- Header -->
@@ -32,9 +34,28 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
           <h2 class="text-2xl font-bold text-white">Ciclos de Medición</h2>
           <p class="text-slate-400 text-sm mt-1">Gestión de períodos mensuales de lectura de medidores</p>
         </div>
-        <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="openCreate()">
-          <mat-icon>add</mat-icon> Nuevo Ciclo
-        </button>
+        <div class="flex items-center gap-2">
+          <button mat-stroked-button
+                  class="!border-slate-600 !text-slate-300 cursor-pointer"
+                  [matMenuTriggerFor]="exportMenu"
+                  [disabled]="filteredCycles().length === 0"
+                  matTooltip="Exportar ciclos visibles">
+            <mat-icon>download</mat-icon> Exportar
+          </button>
+          <mat-menu #exportMenu="matMenu">
+            <button mat-menu-item (click)="exportCycles('xlsx')">
+              <mat-icon>grid_on</mat-icon>
+              <span>Exportar a XLSX</span>
+            </button>
+            <button mat-menu-item (click)="exportCycles('csv')">
+              <mat-icon>description</mat-icon>
+              <span>Exportar a CSV</span>
+            </button>
+          </mat-menu>
+          <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="openCreate()">
+            <mat-icon>add</mat-icon> Nuevo Ciclo
+          </button>
+        </div>
       </div>
 
       <!-- Info banner -->
@@ -73,9 +94,72 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
         </div>
       </div>
 
+      <!-- Filters -->
+      <div class="bg-slate-800 rounded-xl border border-slate-700 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+            <mat-icon style="font-size:16px;width:16px;height:16px;" class="text-cyan-400">filter_list</mat-icon>
+            Filtros
+          </p>
+          @if (hasActiveFilters()) {
+            <button type="button"
+                    class="text-[11px] text-cyan-400 hover:underline cursor-pointer"
+                    (click)="clearFilters()">
+              Limpiar filtros
+            </button>
+          }
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+          <input [ngModel]="searchTerm()" (ngModelChange)="searchTerm.set($event)"
+                 placeholder="Buscar por nombre…"
+                 class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500 lg:col-span-2" />
+
+          <select [ngModel]="filterBuilding()" (ngModelChange)="filterBuilding.set($event)"
+                  class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none cursor-pointer">
+            <option value="">Todos los edificios</option>
+            @for (b of buildings(); track b.id) {
+              <option [value]="b.name">{{ b.name }}</option>
+            }
+          </select>
+
+          <select [ngModel]="filterYear()" (ngModelChange)="filterYear.set(toNumberOrNull($event))"
+                  class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none cursor-pointer">
+            <option [ngValue]="null">Todos los años</option>
+            @for (y of availableYears(); track y) {
+              <option [ngValue]="y">{{ y }}</option>
+            }
+          </select>
+
+          <select [ngModel]="filterMonth()" (ngModelChange)="filterMonth.set(toNumberOrNull($event))"
+                  class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none cursor-pointer">
+            <option [ngValue]="null">Todos los meses</option>
+            @for (m of monthOptions; track m.value) {
+              <option [ngValue]="m.value">{{ m.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap mt-3">
+          @for (s of statusOptions; track s.value) {
+            <button type="button"
+                    class="text-xs px-3 py-1.5 rounded-lg border transition-colors cursor-pointer"
+                    [class]="filterStatus() === s.value ? s.activeClass : 'bg-slate-700 border-slate-600 text-slate-400 hover:border-slate-500'"
+                    (click)="filterStatus.set(s.value)">
+              {{ s.label }}
+            </button>
+          }
+        </div>
+
+        <p class="text-[11px] text-slate-500 mt-3">
+          {{ filteredCycles().length }} de {{ cycleService.cycles().length }}
+          ciclo{{ cycleService.cycles().length !== 1 ? 's' : '' }}
+        </p>
+      </div>
+
       <!-- Cycles list -->
       <div class="space-y-3">
-        @for (cycle of cycleService.cycles(); track cycle.id) {
+        @for (cycle of filteredCycles(); track cycle.id) {
           <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-slate-600 transition-colors">
             <div class="flex items-start justify-between gap-4">
               <!-- Left: info -->
@@ -175,6 +259,13 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
               Crear primer ciclo
             </button>
           </div>
+        } @else if (filteredCycles().length === 0) {
+          <div class="py-12 text-center bg-slate-800 rounded-xl border border-slate-700">
+            <mat-icon class="text-slate-600" style="font-size:36px;width:36px;height:36px;">search_off</mat-icon>
+            <p class="text-slate-400 mt-2 text-sm">Ningún ciclo coincide con los filtros aplicados.</p>
+            <button type="button" class="text-cyan-400 hover:underline cursor-pointer text-sm mt-2"
+                    (click)="clearFilters()">Limpiar filtros</button>
+          </div>
         }
       </div>
     </div>
@@ -183,6 +274,59 @@ import { MeasurementCycle, CycleProgressApartment, CycleProgressResponse } from 
 export class CyclesComponent implements OnInit {
   readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
+  private readonly buildingService = inject(BuildingService);
+  private readonly exportService = inject(ExportService);
+  readonly buildings = this.buildingService.buildings;
+
+  readonly searchTerm = signal('');
+  readonly filterBuilding = signal<string>('');
+  readonly filterStatus = signal<CycleStatus | ''>('');
+  readonly filterYear = signal<number | null>(null);
+  readonly filterMonth = signal<number | null>(null);
+
+  readonly statusOptions: { value: CycleStatus | ''; label: string; activeClass: string }[] = [
+    { value: '', label: 'Todos', activeClass: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' },
+    { value: 'pending', label: 'Pendientes', activeClass: 'bg-amber-500/20 border-amber-500/50 text-amber-400' },
+    { value: 'in_progress', label: 'En curso', activeClass: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' },
+    { value: 'completed', label: 'Completados', activeClass: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' },
+    { value: 'closed', label: 'Cerrados', activeClass: 'bg-slate-500/20 border-slate-500/50 text-slate-300' },
+  ];
+
+  readonly monthOptions = [
+    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' },
+    { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' },
+    { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' },
+    { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' },
+  ];
+
+  readonly availableYears = computed(() => {
+    const years = new Set(this.cycleService.cycles().map(c => c.year));
+    return [...years].sort((a, b) => b - a);
+  });
+
+  readonly filteredCycles = computed(() => {
+    const term = this.searchTerm().trim().toLowerCase();
+    const building = this.filterBuilding();
+    const status = this.filterStatus();
+    const year = this.filterYear();
+    const month = this.filterMonth();
+
+    return this.cycleService.cycles().filter(c => {
+      if (term && !c.name.toLowerCase().includes(term)) return false;
+      if (building && c.building_name !== building) return false;
+      if (status && c.status !== status) return false;
+      if (year != null && c.year !== year) return false;
+      if (month != null && c.month !== month) return false;
+      return true;
+    });
+  });
+
+  readonly hasActiveFilters = computed(() =>
+    !!this.searchTerm().trim() || !!this.filterBuilding() || !!this.filterStatus()
+    || this.filterYear() != null || this.filterMonth() != null
+  );
 
   readonly activeCycles = computed(() =>
     this.cycleService.cycles().filter(c => c.status === 'pending' || c.status === 'in_progress')
@@ -194,8 +338,43 @@ export class CyclesComponent implements OnInit {
     this.cycleService.cycles().filter(c => c.status === 'closed')
   );
 
+  toNumberOrNull(v: unknown): number | null {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  clearFilters(): void {
+    this.searchTerm.set('');
+    this.filterBuilding.set('');
+    this.filterStatus.set('');
+    this.filterYear.set(null);
+    this.filterMonth.set(null);
+  }
+
   ngOnInit(): void {
     this.cycleService.loadAll();
+  }
+
+  exportCycles(format: ExportFormat): void {
+    const columns: ExportColumn<MeasurementCycle>[] = [
+      { header: 'Nombre', key: 'name' },
+      { header: 'Edificio', key: 'building_name' },
+      { header: 'Año', key: 'year' },
+      { header: 'Mes', key: 'month' },
+      { header: 'Mes (nombre)', key: 'month_name' },
+      { header: 'Estado', key: 'status', format: v => this.statusLabel(String(v)) },
+      { header: 'Bloqueo', key: 'enforce', format: v => (v ? 'Sí' : 'No') },
+      { header: 'Programado', key: 'scheduled_date' },
+      { header: 'Límite', key: 'deadline' },
+      { header: 'Total deptos', key: 'total_apartments' },
+      { header: 'Medidos', key: 'measured_count' },
+      { header: 'Pendientes', key: 'pending_count' },
+      { header: 'Progreso (%)', key: 'progress_pct' },
+      { header: 'Notas', key: 'notes' },
+    ];
+    const fileName = this.exportService.buildFileName('ciclos');
+    this.exportService.export(this.filteredCycles(), columns, fileName, format, 'Ciclos');
   }
 
   statusLabel(s: string): string {

@@ -5,12 +5,13 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Measurement, MeasurementAuditEntry } from '../../core/models/measurement.model';
+import { Measurement, MeasurementAuditEntry, REJECTION_CATEGORY_LABEL, RejectionCategory } from '../../core/models/measurement.model';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { MeasurementEditReadingDialogComponent } from './measurement-edit-reading-dialog.component';
+import { MeasurementRejectDialogComponent, MeasurementRejectResult } from './measurement-reject-dialog.component';
 import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-format';
 import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialog.types';
 
@@ -202,6 +203,48 @@ import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialo
               <p class="text-sm text-slate-300 font-mono">
                 {{ currentData().location_coords.lat }}, {{ currentData().location_coords.lng }}
               </p>
+            </div>
+          }
+
+          @if (currentData().status === 'verified' && currentData().validated_by_name) {
+            <div class="pt-2 border-t border-slate-700">
+              <div class="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5">
+                <mat-icon class="text-emerald-400 shrink-0" style="font-size:18px;width:18px;height:18px;margin-top:1px">verified</mat-icon>
+                <div class="min-w-0">
+                  <p class="text-xs font-semibold text-emerald-300 m-0">Validada</p>
+                  <p class="text-[11px] text-slate-400 m-0">
+                    Por <strong class="text-slate-200">{{ currentData().validated_by_name }}</strong>
+                    @if (currentData().validated_at) {
+                      · {{ currentData().validated_at | date: 'dd/MM/yyyy HH:mm' }}
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          }
+
+          @if (currentData().status === 'rejected' && currentData().rejected_by_name) {
+            <div class="pt-2 border-t border-slate-700">
+              <div class="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
+                <mat-icon class="text-red-400 shrink-0" style="font-size:18px;width:18px;height:18px;margin-top:1px">block</mat-icon>
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold text-red-300 m-0">
+                    Rechazada
+                    @if (currentData().rejection_category) {
+                      <span class="text-slate-400 font-normal">— {{ rejectionCategoryLabel(currentData().rejection_category) }}</span>
+                    }
+                  </p>
+                  <p class="text-[11px] text-slate-400 m-0">
+                    Por <strong class="text-slate-200">{{ currentData().rejected_by_name }}</strong>
+                    @if (currentData().rejected_at) {
+                      · {{ currentData().rejected_at | date: 'dd/MM/yyyy HH:mm' }}
+                    }
+                  </p>
+                  @if (currentData().rejection_reason) {
+                    <p class="text-[11px] text-slate-300 mt-1 m-0 italic">"{{ currentData().rejection_reason }}"</p>
+                  }
+                </div>
+              </div>
             </div>
           }
 
@@ -446,57 +489,78 @@ export class MeasurementDetailDialogComponent implements OnInit {
   }
 
   onValidate(): void {
-    this._confirmAndChangeStatus(
-      'verified',
-      'Validar medición',
-      `¿Estás seguro de que deseas validar esta medición del medidor ${this.currentData().meter_id}?`,
-      { confirmText: 'Validar', type: 'info' },
-    );
-  }
-
-  onReject(): void {
-    this._confirmAndChangeStatus(
-      'rejected',
-      'Rechazar medición',
-      `¿Estás seguro de que deseas rechazar esta medición del medidor ${this.currentData().meter_id}?`,
-      { confirmText: 'Rechazar', type: 'danger' },
-    );
-  }
-
-  onReopen(): void {
-    this._confirmAndChangeStatus(
-      'pending_review',
-      'Reabrir medición',
-      `¿Deseas cambiar esta medición a "Pendiente"? Podrás validarla o rechazarla nuevamente.`,
-      { confirmText: 'Reabrir', type: 'warning' },
-    );
-  }
-
-  private _confirmAndChangeStatus(
-    newStatus: string,
-    title: string,
-    message: string,
-    opts: { confirmText: string; type: 'danger' | 'warning' | 'info' },
-  ): void {
+    const cur = this.currentData();
     const ref = this.dialog.open(ConfirmDialogComponent, {
       width: '420px',
       panelClass: ['dark-dialog', 'nested-confirm-dialog'],
-      data: { title, message, confirmText: opts.confirmText, type: opts.type },
+      data: {
+        title: 'Validar medición',
+        message: `¿Validar la medición del medidor ${cur.meter_id}? Quedará registrado tu nombre como validador.`,
+        confirmText: 'Validar',
+        type: 'info',
+      },
     });
     ref.afterClosed().subscribe(async confirmed => {
       if (!confirmed) return;
       this.loading.set(true);
-      const updated = await this.measurementService.updateMeasurementStatus(this.currentData().id, newStatus);
+      const updated = await this.measurementService.validateMeasurement(cur.id);
       this.loading.set(false);
       if (!updated) return;
-      this.dirty = true;
-      const leavesPendingQueue = newStatus === 'verified' || newStatus === 'rejected';
-      if (this.reviewMode() && leavesPendingQueue) {
-        this.advanceQueueAfterRemoval(updated.id);
-      } else {
-        this.currentData.set(updated);
-      }
+      this._applyTransition(updated, true);
     });
+  }
+
+  onReject(): void {
+    const cur = this.currentData();
+    const ref = this.dialog.open(MeasurementRejectDialogComponent, {
+      panelClass: ['dark-dialog', 'nested-confirm-dialog'],
+      maxWidth: '95vw',
+      data: { meterId: cur.meter_id, apartmentNumber: cur.apartment },
+    });
+    ref.afterClosed().subscribe(async (result: MeasurementRejectResult | undefined) => {
+      if (!result) return;
+      this.loading.set(true);
+      const updated = await this.measurementService.rejectMeasurement(cur.id, result.category, result.reason);
+      this.loading.set(false);
+      if (!updated) return;
+      this._applyTransition(updated, true);
+    });
+  }
+
+  onReopen(): void {
+    const cur = this.currentData();
+    const ref = this.dialog.open(ConfirmDialogComponent, {
+      width: '420px',
+      panelClass: ['dark-dialog', 'nested-confirm-dialog'],
+      data: {
+        title: 'Reabrir medición',
+        message: '¿Deseas cambiar esta medición a "Pendiente"? Podrás validarla o rechazarla nuevamente.',
+        confirmText: 'Reabrir',
+        type: 'warning',
+      },
+    });
+    ref.afterClosed().subscribe(async confirmed => {
+      if (!confirmed) return;
+      this.loading.set(true);
+      const updated = await this.measurementService.updateMeasurementStatus(cur.id, 'pending_review');
+      this.loading.set(false);
+      if (!updated) return;
+      this._applyTransition(updated, false);
+    });
+  }
+
+  private _applyTransition(updated: Measurement, leavesPendingQueue: boolean): void {
+    this.dirty = true;
+    if (this.reviewMode() && leavesPendingQueue) {
+      this.advanceQueueAfterRemoval(updated.id);
+    } else {
+      this.currentData.set(updated);
+    }
+  }
+
+  rejectionCategoryLabel(cat: string | null | undefined): string {
+    if (!cat) return '';
+    return REJECTION_CATEGORY_LABEL[cat as RejectionCategory] ?? cat;
   }
 
   /** Tras validar/rechazar en modo cola: quita la fila actual y muestra la siguiente pendiente. */

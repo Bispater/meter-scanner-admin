@@ -34,6 +34,14 @@ interface ApiMeasurement {
   audit_logs?: ApiAudit[];
   deleted_at?: string | null;
   retention_days_remaining?: number | null;
+  validated_by?: number | null;
+  validated_by_name?: string | null;
+  validated_at?: string | null;
+  rejected_by?: number | null;
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
+  rejection_category?: string | null;
+  rejection_reason?: string | null;
 }
 
 interface ApiAudit {
@@ -375,7 +383,58 @@ export class MeasurementService {
       audit_logs: audit,
       deleted_at: m.deleted_at ?? undefined,
       retention_days_remaining: m.retention_days_remaining ?? undefined,
+      validated_by: m.validated_by != null ? String(m.validated_by) : null,
+      validated_by_name: m.validated_by_name ?? null,
+      validated_at: m.validated_at ?? null,
+      rejected_by: m.rejected_by != null ? String(m.rejected_by) : null,
+      rejected_by_name: m.rejected_by_name ?? null,
+      rejected_at: m.rejected_at ?? null,
+      rejection_category: (m.rejection_category as Measurement['rejection_category']) ?? '',
+      rejection_reason: m.rejection_reason ?? '',
     };
+  }
+
+  validateMeasurement(id: string): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/validate/`;
+    return new Promise(resolve => {
+      this.http.post<ApiMeasurement>(endpoint, {}).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          const updated = this._measurements().map(m => (m.id === id ? mapped : m));
+          this._measurements.set(updated);
+          this._computeSummary(updated);
+          this.notify.success('Medición validada');
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Validate error:', err);
+          this.notify.error('No se pudo validar la medición');
+          resolve(null);
+        },
+      });
+    });
+  }
+
+  rejectMeasurement(id: string, category: string, reason: string): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/reject/`;
+    return new Promise(resolve => {
+      this.http.post<ApiMeasurement>(endpoint, { category, reason }).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          const updated = this._measurements().map(m => (m.id === id ? mapped : m));
+          this._measurements.set(updated);
+          this._computeSummary(updated);
+          this.notify.success('Medición rechazada — operador notificado');
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Reject error:', err);
+          const msg = err?.error?.category || err?.error?.detail || 'No se pudo rechazar la medición';
+          this.notify.error(typeof msg === 'string' ? msg : 'No se pudo rechazar la medición');
+          resolve(null);
+        },
+      });
+    });
   }
 
   private _computeSummary(measurements: Measurement[]): void {
