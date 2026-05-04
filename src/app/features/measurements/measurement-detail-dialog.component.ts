@@ -130,7 +130,7 @@ import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialo
             </div>
             <div class="col-span-2">
               <p class="text-[11px] uppercase tracking-wide text-slate-500 mb-0.5">Cara medidor (lectura)</p>
-              <p class="text-sm font-semibold text-white">{{ currentData().reading_layout === 'B' ? 'Tipo B — 8 enteros + 1 esfera' : 'Tipo A — 5 enteros + 4 esferas' }}</p>
+              <p class="text-sm font-semibold text-white">{{ currentData().reading_layout === 'B' ? 'Tipo B — 5+4 (5 negros + 3 rojos + 1 esfera)' : 'Tipo A — 5 enteros + 4 esferas' }}</p>
             </div>
 
             <div class="col-span-2">

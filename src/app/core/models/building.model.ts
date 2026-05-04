@@ -1,4 +1,4 @@
-/** Lectura de 9 dígitos: Tipo A (5+4 esferas) vs Tipo B (8 rodillos + 1 esfera). */
+/** Lectura de 9 dígitos con coma lógica 5+4: A y B; B se lee 5 negros + 3 rojos + 1 esfera en carril. */
 export type ReadingLayout = 'A' | 'B';
 
 export interface Apartment {

@@ -84,7 +84,10 @@ export interface MeasurementEditReadingDialogData {
             <mat-error>{{ readingError() }}</mat-error>
           }
           @if (measurement().reading_layout === 'B') {
-            <mat-hint class="!text-slate-500">Tipo B: 8 enteros + 1 esfera tras la coma (ej. 00041907,9)</mat-hint>
+            <mat-hint class="!text-slate-500"
+              >Tipo B: 5 enteros + 4 decimales, misma forma que A (ej. 00000,0646). Físicamente: 5 negros + 3 rojos + 1
+              esfera.</mat-hint
+            >
           } @else {
             <mat-hint class="!text-slate-500">Tipo A: 5 enteros + 4 dígitos tras la coma (ej. 00000,6407)</mat-hint>
           }
@@ -155,9 +158,8 @@ export class MeasurementEditReadingDialogComponent {
   }
 
   private parseFormattedReading(text: string): number | null {
-    const layout = this.data.measurement.reading_layout === 'B' ? 'B' : 'A';
-    const intLen = layout === 'B' ? 8 : 5;
-    const fracLen = layout === 'B' ? 1 : 4;
+    const intLen = 5;
+    const fracLen = 4;
     const expectedTotal = intLen + fracLen;
 
     const t = text.trim();
@@ -191,11 +193,8 @@ export class MeasurementEditReadingDialogComponent {
   async save(): Promise<void> {
     const v = this.parseFormattedReading(this.readingInput);
     if (v === null) {
-      const layout = this.data.measurement.reading_layout === 'B' ? 'B' : 'A';
       this.readingError.set(
-        layout === 'B'
-          ? 'Formato tipo B: coma entre 8 enteros y 1 esfera, 9 dígitos en total (ej. 00041907,9).'
-          : 'Formato tipo A: coma entre 5 enteros y 4 dígitos, 9 dígitos en total (ej. 00000,6407).',
+        'Formato: coma entre 5 enteros y 4 decimales, 9 dígitos en total (ej. 00000,6407 o 00000,0646 en tipo B).',
       );
       return;
     }
