@@ -5,6 +5,13 @@ export interface ExportColumn<T> {
   header: string;
   key: keyof T | ((row: T) => unknown);
   format?: (value: unknown, row: T) => string | number | null;
+  /** Resaltar la columna (ancho extra y color si el writer lo soporta). */
+  highlight?: boolean;
+  /**
+   * Formato Excel para celdas de la columna. Usar `'@'` para forzar texto
+   * y conservar los ceros a la izquierda (p. ej. `00027,9254`).
+   */
+  numFmt?: string;
 }
 
 export type ExportFormat = 'csv' | 'xlsx';
@@ -22,7 +29,7 @@ export class ExportService {
     if (format === 'csv') {
       this.downloadCsv(data, fileName);
     } else {
-      this.downloadXlsx(data, fileName, sheetName);
+      this.downloadXlsx(data, fileName, sheetName, columns);
     }
   }
 
@@ -41,19 +48,58 @@ export class ExportService {
     return [headers, ...body];
   }
 
-  private downloadXlsx(aoa: (string | number | null)[][], fileName: string, sheetName: string): void {
+  private downloadXlsx<T>(
+    aoa: (string | number | null)[][],
+    fileName: string,
+    sheetName: string,
+    columns?: ExportColumn<T>[],
+  ): void {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = aoa[0].map((_, idx) => {
+      const col = columns?.[idx];
       const max = aoa.reduce((acc, row) => {
         const v = row[idx];
         const len = v == null ? 0 : String(v).length;
         return Math.max(acc, len);
       }, 0);
-      return { wch: Math.min(Math.max(max + 2, 10), 60) };
+      const base = Math.min(Math.max(max + 2, 10), 60);
+      return { wch: col?.highlight ? Math.max(base, 16) : base };
     });
+
+    if (columns && columns.length) {
+      const headerFill = { patternType: 'solid', fgColor: { rgb: 'FF06B6D4' } };
+      const headerFont = { bold: true, color: { rgb: 'FFFFFFFF' } };
+      const cellFill = { patternType: 'solid', fgColor: { rgb: 'FFE0F7FA' } };
+
+      for (let c = 0; c < columns.length; c++) {
+        const col = columns[c];
+        for (let r = 0; r < aoa.length; r++) {
+          const ref = XLSX.utils.encode_cell({ c, r });
+          const cell = ws[ref];
+          if (!cell) continue;
+          if (col.highlight) {
+            cell.t = 's';
+            cell.v = cell.v == null ? '' : String(cell.v);
+            cell.s = r === 0
+              ? { fill: headerFill, font: headerFont, alignment: { horizontal: 'center' } }
+              : { fill: cellFill, font: { bold: true } };
+          } else if (r === 0) {
+            cell.s = { font: { bold: true } };
+          }
+          if (col.numFmt && r > 0) {
+            cell.z = col.numFmt;
+            if (col.numFmt === '@') {
+              cell.t = 's';
+              cell.v = cell.v == null ? '' : String(cell.v);
+            }
+          }
+        }
+      }
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
-    XLSX.writeFile(wb, this.withExtension(fileName, 'xlsx'));
+    XLSX.writeFile(wb, this.withExtension(fileName, 'xlsx'), { cellStyles: true } as XLSX.WritingOptions);
   }
 
   private downloadCsv(aoa: (string | number | null)[][], fileName: string): void {

@@ -166,10 +166,14 @@ export class MeasurementEditReadingDialogComponent {
     if (!t.includes(',')) return null;
     const parts = t.split(',');
     if (parts.length !== 2) return null;
-    const digits = parts[0].replace(/\D/g, '') + parts[1].replace(/\D/g, '');
-    if (!digits || !/^\d+$/.test(digits)) return null;
-    if (digits.length !== expectedTotal) return null;
-    const n = parseInt(digits, 10);
+    const intDigits = parts[0].replace(/\D/g, '');
+    const fracDigits = parts[1].replace(/\D/g, '');
+    if (!intDigits || !fracDigits) return null;
+    if (intDigits.length + fracDigits.length !== expectedTotal) return null;
+    if (!/^\d+$/.test(intDigits + fracDigits)) return null;
+    // Backend espera Decimal m³ (DecimalField max_digits=12, decimal_places=4).
+    // "15350,0000" → 15350.0  (no concatenar dígitos: eso supera max_whole_digits=8 y DRF rechaza con 400).
+    const n = parseFloat(`${intDigits}.${fracDigits}`);
     return Number.isFinite(n) ? n : null;
   }
 

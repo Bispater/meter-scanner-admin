@@ -11,6 +11,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { MeasurementEditReadingDialogComponent } from './measurement-edit-reading-dialog.component';
+import { MeasurementReassignDialogComponent } from './measurement-reassign-dialog.component';
 import { MeasurementRejectDialogComponent, MeasurementRejectResult } from './measurement-reject-dialog.component';
 import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-format';
 import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialog.types';
@@ -285,7 +286,7 @@ import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialo
           <mat-icon>delete</mat-icon> Eliminar
         </button>
         <div class="flex gap-2 items-center flex-wrap justify-end min-w-0">
-          @if (isAdmin()) {
+          @if (isAdmin() && currentData().status !== 'verified') {
             <button
               mat-stroked-button
               type="button"
@@ -295,6 +296,30 @@ import { normalizeMeasurementDetailDialogData } from './measurement-detail-dialo
             >
               <mat-icon style="font-size:18px;width:18px;height:18px;">edit</mat-icon>
               Editar lectura
+            </button>
+          } @else if (isAdmin() && currentData().status === 'verified') {
+            <button
+              mat-stroked-button
+              type="button"
+              class="!border-slate-600 !text-slate-500 cursor-not-allowed"
+              [disabled]="true"
+              matTooltip="Reabre la medición antes de corregir la lectura"
+            >
+              <mat-icon style="font-size:18px;width:18px;height:18px;">edit_off</mat-icon>
+              Editar lectura
+            </button>
+          }
+          @if (isAdmin()) {
+            <button
+              mat-stroked-button
+              type="button"
+              class="!border-cyan-500/40 !text-cyan-300 cursor-pointer"
+              (click)="openReassign()"
+              [disabled]="loading()"
+              matTooltip="Mover esta medición a otro depto (la foto y lectura se conservan)"
+            >
+              <mat-icon style="font-size:18px;width:18px;height:18px;">swap_horiz</mat-icon>
+              Reasignar
             </button>
           }
             @if (currentData().status === 'pending_review') {
@@ -390,6 +415,7 @@ export class MeasurementDetailDialogComponent implements OnInit {
   }
 
   openEditReading(): void {
+    if (this.currentData().status === 'verified') return;
     const ref = this.dialog.open(MeasurementEditReadingDialogComponent, {
       data: { measurement: this.currentData() },
       panelClass: ['dark-dialog', 'measurement-edit-nested'],
@@ -398,11 +424,29 @@ export class MeasurementDetailDialogComponent implements OnInit {
       autoFocus: false,
       restoreFocus: false,
     });
-    ref.afterClosed().subscribe((updated: Measurement | undefined) => {
-      if (updated) {
-        this.dirty = true;
-        this.currentData.set(updated);
-      }
+    ref.afterClosed().subscribe(async (updated: Measurement | undefined) => {
+      if (!updated) return;
+      this.dirty = true;
+      // Re-leer el detalle: el PATCH no siempre devuelve `audit_logs` ni los datos
+      // derivados (validador, etc.); el GET /:id/ es la fuente autoritativa.
+      await this.loadDetail(updated.id);
+    });
+  }
+
+  openReassign(): void {
+    const ref = this.dialog.open(MeasurementReassignDialogComponent, {
+      data: { measurement: this.currentData() },
+      panelClass: ['dark-dialog', 'measurement-edit-nested'],
+      maxWidth: '640px',
+      width: '96vw',
+      autoFocus: false,
+      restoreFocus: false,
+    });
+    ref.afterClosed().subscribe(async (updated: Measurement | undefined) => {
+      if (!updated) return;
+      this.dirty = true;
+      // Recargar para que el historial muestre la nueva entrada apartment.
+      await this.loadDetail(updated.id);
     });
   }
 

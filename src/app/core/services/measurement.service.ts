@@ -1,5 +1,4 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { finalize } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
 import { Measurement, MeasurementAuditEntry, Summary } from '../models/measurement.model';
 import { environment } from '../../../environments/environment';
@@ -54,7 +53,7 @@ interface ApiAudit {
   edited_by_name: string | null;
 }
 
-interface ApiPage<T> { count: number; results: T[]; }
+interface ApiPage<T> { count: number; next: string | null; previous?: string | null; results: T[]; }
 
 @Injectable({ providedIn: 'root' })
 export class MeasurementService {
@@ -94,30 +93,37 @@ export class MeasurementService {
   // ── Load from API ──
 
   loadAll(): void {
-    const endpoint = `${this.url}/?page_size=500&ordering=-captured_at`;
-    console.log('[MEASUREMENTS] GET', endpoint);
     this._loading.set(true);
-    this.http
-      .get<ApiPage<ApiMeasurement>>(endpoint)
-      .pipe(
-        finalize(() => {
-          this._loading.set(false);
-          this._initialLoadPending.set(false);
-        }),
-      )
-      .subscribe({
+    const acc: ApiMeasurement[] = [];
+    const first = `${this.url}/?page_size=500&ordering=-captured_at`;
+    const fetchPage = (url: string): void => {
+      console.log('[MEASUREMENTS] GET', url);
+      this.http.get<ApiPage<ApiMeasurement>>(url).subscribe({
         next: res => {
-          console.log('[MEASUREMENTS] Loaded:', res.count, 'measurements', res.results);
-          const mapped = res.results.map(m => this._mapMeasurement(m));
+          acc.push(...(res.results ?? []));
+          if (res.next) {
+            // El backend ignora page_size grande y devuelve <=20 por página.
+            // Seguir `next` hasta agotar resultados.
+            fetchPage(res.next);
+            return;
+          }
+          console.log('[MEASUREMENTS] Loaded:', acc.length, 'measurements (total declarado:', res.count, ')');
+          const mapped = acc.map(m => this._mapMeasurement(m));
           this._measurements.set(mapped);
           this._computeSummary(mapped);
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
           this._onLoadedCallbacks.forEach(cb => cb());
         },
         error: err => {
+          this._loading.set(false);
+          this._initialLoadPending.set(false);
           console.error('[MEASUREMENTS] Load error:', err);
           this.notify.error('Error al cargar mediciones');
         },
       });
+    };
+    fetchPage(first);
   }
 
   getFilteredMeasurements(filters: {
@@ -190,6 +196,39 @@ export class MeasurementService {
         error: err => {
           console.error('[MEASUREMENTS] Detail error:', err);
           this.notify.error('Error al cargar el detalle');
+          resolve(null);
+        },
+      });
+    });
+  }
+
+  /**
+   * Reasigna la medición a otro depto (FK apartment).
+   * Útil cuando el operador escaneó un QR equivocado y se descubre viendo la foto.
+   * Genera entrada de auditoría en BD (field_name='apartment').
+   */
+  reassignMeasurement(
+    id: string,
+    targetApartmentId: number,
+    note?: string,
+  ): Promise<Measurement | null> {
+    const endpoint = `${this.url}/${id}/reassign/`;
+    const body: { apartment_id: number; note?: string } = { apartment_id: targetApartmentId };
+    if (note?.trim()) body.note = note.trim();
+    return new Promise(resolve => {
+      this.http.post<ApiMeasurement>(endpoint, body).subscribe({
+        next: res => {
+          const mapped = this._mapMeasurement(res);
+          const updated = this._measurements().map(m => (m.id === id ? mapped : m));
+          this._measurements.set(updated);
+          this._computeSummary(updated);
+          this.notify.success('Medición reasignada');
+          resolve(mapped);
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Reassign error:', err);
+          const detail = err?.error?.apartment_id || err?.error?.detail || 'No se pudo reasignar la medición';
+          this.notify.error(typeof detail === 'string' ? detail : 'No se pudo reasignar la medición');
           resolve(null);
         },
       });
@@ -302,18 +341,31 @@ export class MeasurementService {
   }
 
   loadTrash(): void {
-    const endpoint = `${this.url}/trash/?page_size=500`;
-    console.log('[MEASUREMENTS] GET trash', endpoint);
-    this.http.get<ApiPage<ApiMeasurement> | ApiMeasurement[]>(endpoint).subscribe({
-      next: res => {
-        const rows = Array.isArray(res) ? res : res.results;
-        this._trash.set(rows.map(m => this._mapMeasurement(m)));
-      },
-      error: err => {
-        console.error('[MEASUREMENTS] Trash load error:', err);
-        this._trash.set([]);
-      },
-    });
+    const acc: ApiMeasurement[] = [];
+    const first = `${this.url}/trash/?page_size=500`;
+    const fetchPage = (url: string): void => {
+      console.log('[MEASUREMENTS] GET trash', url);
+      this.http.get<ApiPage<ApiMeasurement> | ApiMeasurement[]>(url).subscribe({
+        next: res => {
+          if (Array.isArray(res)) {
+            acc.push(...res);
+            this._trash.set(acc.map(m => this._mapMeasurement(m)));
+            return;
+          }
+          acc.push(...(res.results ?? []));
+          if (res.next) {
+            fetchPage(res.next);
+            return;
+          }
+          this._trash.set(acc.map(m => this._mapMeasurement(m)));
+        },
+        error: err => {
+          console.error('[MEASUREMENTS] Trash load error:', err);
+          this._trash.set([]);
+        },
+      });
+    };
+    fetchPage(first);
   }
 
   restoreMeasurement(id: string): Promise<Measurement | null> {

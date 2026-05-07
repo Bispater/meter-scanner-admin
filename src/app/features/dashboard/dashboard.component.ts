@@ -1,6 +1,6 @@
 import {
   Component, inject, ViewChild, ElementRef,
-  AfterViewInit, OnDestroy, effect,
+  AfterViewInit, OnDestroy, effect, computed,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -31,19 +31,35 @@ Chart.register(...registerables);
 
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-        @for (card of summaryCards; track card.title) {
-          <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 hover:border-slate-600 transition-colors">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-sm text-slate-400 font-medium">{{ card.title }}</p>
-                <p class="text-3xl font-bold mt-2" [class]="card.valueColor">{{ card.value }}</p>
-                <p class="text-xs text-slate-500 mt-1">{{ card.subtitle }}</p>
+        @for (card of summaryCards(); track card.title) {
+          @if (card.link) {
+            <a [routerLink]="card.link"
+               class="block bg-slate-800 rounded-xl border border-slate-700 p-6 hover:border-amber-500/50 hover:bg-slate-800/80 transition-colors cursor-pointer no-underline">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm text-slate-400 font-medium">{{ card.title }}</p>
+                  <p class="text-3xl font-bold mt-2" [class]="card.valueColor">{{ card.value }}</p>
+                  <p class="text-xs text-slate-500 mt-1">{{ card.subtitle }}</p>
+                </div>
+                <div class="w-11 h-11 rounded-lg flex items-center justify-center" [class]="card.iconBg">
+                  <mat-icon [class]="card.iconColor" style="font-size:22px;width:22px;height:22px;">{{ card.icon }}</mat-icon>
+                </div>
               </div>
-              <div class="w-11 h-11 rounded-lg flex items-center justify-center" [class]="card.iconBg">
-                <mat-icon [class]="card.iconColor" style="font-size:22px;width:22px;height:22px;">{{ card.icon }}</mat-icon>
+            </a>
+          } @else {
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 hover:border-slate-600 transition-colors">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm text-slate-400 font-medium">{{ card.title }}</p>
+                  <p class="text-3xl font-bold mt-2" [class]="card.valueColor">{{ card.value }}</p>
+                  <p class="text-xs text-slate-500 mt-1">{{ card.subtitle }}</p>
+                </div>
+                <div class="w-11 h-11 rounded-lg flex items-center justify-center" [class]="card.iconBg">
+                  <mat-icon [class]="card.iconColor" style="font-size:22px;width:22px;height:22px;">{{ card.icon }}</mat-icon>
+                </div>
               </div>
             </div>
-          </div>
+          }
         }
       </div>
 
@@ -83,7 +99,7 @@ Chart.register(...registerables);
           <a routerLink="/app/measurements" class="text-cyan-400 text-sm hover:underline">Ver todas →</a>
         </div>
         <div class="divide-y divide-slate-700">
-          @for (m of recentMeasurements; track m.id) {
+          @for (m of recentMeasurements(); track m.id) {
             <div class="px-6 py-4 flex items-center gap-4 hover:bg-slate-700/30 transition-colors">
               <div class="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center shrink-0">
                 <mat-icon class="text-slate-400" style="font-size:20px;width:20px;height:20px;">speed</mat-icon>
@@ -123,8 +139,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private barChart?: Chart;
   private donutChart?: Chart;
 
-  readonly summary = this.measurementService.summary;
-  readonly recentMeasurements = this.measurementService.measurements().slice(0, 5);
+  readonly recentMeasurements = computed(() =>
+    [...this.measurementService.measurements()]
+      .sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime())
+      .slice(0, 5),
+  );
 
   readonly statusLegend = [
     { label: 'Verificado', color: '#10b981' },
@@ -142,38 +161,57 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  get summaryCards() {
-    const s = this.summary();
+  readonly summaryCards = computed(() => {
+    const all = this.measurementService.measurements();
+    const pending = all.filter(m => m.status === 'pending_review').length;
+    const verified = all.filter(m => m.status === 'verified').length;
+    const rejected = all.filter(m => m.status === 'rejected').length;
+    const total = pending + verified + rejected;
+
+    // Validadas en últimos 30 días (usa validated_at si existe; si no, captured_at).
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const verifiedRecent = all.filter(m => {
+      if (m.status !== 'verified') return false;
+      const ts = m.validated_at ? new Date(m.validated_at).getTime() : new Date(m.captured_at).getTime();
+      return Number.isFinite(ts) && ts >= cutoff;
+    }).length;
+
+    const validationRate = total > 0 ? Math.round((verified / total) * 100) : 0;
+    const rejectedLabel = rejected === 1 ? '1 rechazada' : `${rejected} rechazadas`;
+
     return [
       {
-        title: 'Lecturas Hoy',
-        value: s.total_readings_today.toString(),
-        subtitle: 'Mediciones registradas',
-        icon: 'analytics',
-        iconBg: 'bg-cyan-500/10',
-        iconColor: 'text-cyan-400',
-        valueColor: 'text-white',
-      },
-      {
-        title: 'Alertas Pendientes',
-        value: s.pending_alerts.toString(),
-        subtitle: 'Requieren revisión',
-        icon: 'warning',
+        title: 'Pendientes',
+        value: pending.toString(),
+        subtitle: pending === 0 ? 'Sin pendientes' : 'Mediciones por validar',
+        icon: 'pending_actions',
         iconBg: 'bg-amber-500/10',
         iconColor: 'text-amber-400',
         valueColor: 'text-amber-400',
+        link: '/app/measurements' as string | null,
       },
       {
-        title: 'Consumo Total',
-        value: `${s.total_consumption_m3.toLocaleString()} m³`,
-        subtitle: 'Acumulado del período',
-        icon: 'water_drop',
+        title: 'Validadas (30 días)',
+        value: verifiedRecent.toString(),
+        subtitle: `${verified} validadas en total`,
+        icon: 'verified',
         iconBg: 'bg-emerald-500/10',
         iconColor: 'text-emerald-400',
         valueColor: 'text-white',
+        link: null as string | null,
+      },
+      {
+        title: 'Tasa de validación',
+        value: total > 0 ? `${validationRate}%` : '—',
+        subtitle: total > 0 ? `${rejectedLabel} · ${total} en total` : 'Sin datos aún',
+        icon: 'trending_up',
+        iconBg: 'bg-cyan-500/10',
+        iconColor: 'text-cyan-400',
+        valueColor: 'text-white',
+        link: null as string | null,
       },
     ];
-  }
+  });
 
   ngAfterViewInit(): void {
     this._initCharts();

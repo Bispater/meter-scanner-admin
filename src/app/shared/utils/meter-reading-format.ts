@@ -67,3 +67,17 @@ export function formatMeterReadingDisplay(
 
   return `${left},${right}`;
 }
+
+/** Valor m³ para hojas de cálculo: punto decimal y 4 cifras (sin perder `.0000`). */
+export function formatMeterReadingNumericIso(
+  raw: number | string | null | undefined,
+): string {
+  if (raw == null || raw === '') return '';
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return (Math.round(raw * 10000) / 10000).toFixed(4);
+  }
+  const t = String(raw).trim().replace(',', '.');
+  const n = parseFloat(t);
+  if (!Number.isFinite(n)) return '';
+  return (Math.round(n * 10000) / 10000).toFixed(4);
+}

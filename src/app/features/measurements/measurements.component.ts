@@ -24,6 +24,9 @@ import { ImageLightboxDialogComponent } from './image-lightbox-dialog.component'
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { formatMeterReadingDisplay } from '../../shared/utils/meter-reading-format';
 import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/export.service';
+import { MeasurementPhotoExportService, ZIP_CANCELLED } from '../../shared/utils/measurement-photo-export.service';
+import { MeasurementCoverageComponent } from './measurement-coverage.component';
+import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
 
 @Component({
   selector: 'app-measurements',
@@ -43,6 +46,7 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
     MatTooltipModule,
     MatDatepickerModule,
     MatMenuModule,
+    MeasurementCoverageComponent,
   ],
   template: `
     <div class="space-y-5">
@@ -57,10 +61,35 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button mat-stroked-button
-                  [class]="showTrash() ? '!border-slate-600 !text-slate-400' : '!border-cyan-500/50 !text-cyan-400'"
+                  [class]="!showTrash() && !pendingOnly() ? '!border-cyan-500/50 !text-cyan-400' : '!border-slate-600 !text-slate-400'"
                   class="cursor-pointer"
                   (click)="setTrashMode(false)">
             <mat-icon>list</mat-icon> Activas
+          </button>
+          <button mat-stroked-button
+                  [class]="pendingOnly() && !showTrash() ? '!border-amber-500/60 !text-amber-300' : '!border-slate-600 !text-slate-400'"
+                  class="cursor-pointer"
+                  (click)="showOnlyPending()"
+                  matTooltip="Filtrar tabla a mediciones pendientes de validar">
+            <mat-icon>pending_actions</mat-icon>
+            Pendientes
+            <span class="ml-1 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full text-[11px] font-bold"
+                  [class]="pendingCount() > 0 ? 'bg-amber-500/25 text-amber-200' : 'bg-slate-700 text-slate-400'">
+              {{ pendingCount() }}
+            </span>
+          </button>
+          <button mat-stroked-button
+                  [class]="filterDuplicates === 'duplicates' && !showTrash() ? '!border-rose-500/60 !text-rose-300' : '!border-slate-600 !text-slate-400'"
+                  class="cursor-pointer"
+                  (click)="showOnlyDuplicates()"
+                  [disabled]="duplicateRowsCount() === 0"
+                  matTooltip="Filtrar a deptos con 2+ mediciones en el mismo mes (agrupados para revisar)">
+            <mat-icon>content_copy</mat-icon>
+            Duplicados
+            <span class="ml-1 inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full text-[11px] font-bold"
+                  [class]="duplicateRowsCount() > 0 ? 'bg-rose-500/25 text-rose-200' : 'bg-slate-700 text-slate-400'">
+              {{ duplicateRowsCount() }}
+            </span>
           </button>
           <button mat-stroked-button
                   [class]="showTrash() ? '!border-amber-500/50 !text-amber-400' : '!border-slate-600 !text-slate-400'"
@@ -68,7 +97,7 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
                   (click)="setTrashMode(true)">
             <mat-icon>delete_outline</mat-icon> Papelera
           </button>
-          @if (!showTrash()) {
+          @if (!showTrash() && pendingCount() > 0) {
             <button
               mat-stroked-button
               class="!border-amber-500/40 !text-amber-300 cursor-pointer"
@@ -78,6 +107,14 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
               <mat-icon>view_carousel</mat-icon> Revisar pendientes
             </button>
           }
+          <button mat-stroked-button
+                  [class]="viewMode() === 'coverage' ? '!border-cyan-500/60 !text-cyan-300' : '!border-slate-600 !text-slate-300'"
+                  class="cursor-pointer"
+                  (click)="toggleViewMode()"
+                  matTooltip="Cambiar entre tabla y vista de cobertura (faltantes)">
+            <mat-icon>{{ viewMode() === 'coverage' ? 'table_chart' : 'grid_view' }}</mat-icon>
+            {{ viewMode() === 'coverage' ? 'Vista tabla' : 'Cobertura' }}
+          </button>
           <button mat-stroked-button
                   class="!border-slate-600 !text-slate-300 cursor-pointer"
                   [matMenuTriggerFor]="exportMenu"
@@ -94,9 +131,21 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
               <mat-icon>description</mat-icon>
               <span>Exportar a CSV</span>
             </button>
+            <button mat-menu-item
+                    (click)="exportPhotosZip()"
+                    [disabled]="exportZipBusy || photosInDisplayCount() === 0"
+                    matTooltip="El ZIP se arma en el servidor, en carpetas Edificio/Torre — incluye solo las filas visibles con foto">
+              <mat-icon [class.animate-spin]="exportZipBusy">{{ exportZipBusy ? 'progress_activity' : 'archive' }}</mat-icon>
+              <span>{{ exportZipBusy ? 'Preparando ZIP… (' + photosInDisplayCount() + ' fotos)' : 'Exportar fotos (ZIP)' }}</span>
+            </button>
           </mat-menu>
-          <button mat-flat-button class="!bg-cyan-600 !text-white cursor-pointer" (click)="refresh()" matTooltip="Actualizar datos">
-            <mat-icon>refresh</mat-icon> Actualizar
+          <button mat-flat-button
+                  class="!bg-cyan-600 !text-white cursor-pointer"
+                  (click)="refresh()"
+                  [disabled]="loading()"
+                  [matTooltip]="loading() ? 'Sincronizando con el servidor…' : 'Actualizar datos (auto cada 30s)'">
+            <mat-icon [class.animate-spin]="loading()">{{ loading() ? 'progress_activity' : 'refresh' }}</mat-icon>
+            <span>{{ loading() ? 'Actualizando…' : 'Actualizar' }}</span>
           </button>
         </div>
       </div>
@@ -127,7 +176,7 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
           </p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-start">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 items-start">
           <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Edificio</mat-label>
             <mat-select [(ngModel)]="filterBuilding" (ngModelChange)="applyFilters()">
@@ -163,6 +212,16 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
             </mat-select>
           </mat-form-field>
 
+          <mat-form-field appearance="outline" class="dense-field w-full"
+                          matTooltip="Duplicados = mismo edificio+torre+depto en el mismo mes calendario">
+            <mat-label>Duplicados</mat-label>
+            <mat-select [(ngModel)]="filterDuplicates" (ngModelChange)="applyFilters()">
+              <mat-option value="">Todos</mat-option>
+              <mat-option value="duplicates">Solo repetidos ({{ duplicateRowsCount() }})</mat-option>
+              <mat-option value="unique">Solo únicos</mat-option>
+            </mat-select>
+          </mat-form-field>
+
           <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Desde</mat-label>
             <input matInput [matDatepicker]="fromPicker" [(ngModel)]="filterDateFromObj"
@@ -178,7 +237,32 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
             <mat-datepicker-toggle matIconSuffix [for]="toPicker"></mat-datepicker-toggle>
             <mat-datepicker #toPicker></mat-datepicker>
           </mat-form-field>
+
+          <mat-form-field appearance="outline" class="dense-field w-full">
+            <mat-label>Año (captura)</mat-label>
+            <mat-select [(ngModel)]="filterYearPreset" (ngModelChange)="onCaptureMonthPresetChange()">
+              <mat-option value="">Cualquier año</mat-option>
+              @for (y of availableYears(); track y) {
+                <mat-option [value]="y">{{ y }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="dense-field w-full">
+            <mat-label>Mes (captura)</mat-label>
+            <mat-select [(ngModel)]="filterMonthPreset" (ngModelChange)="onCaptureMonthPresetChange()">
+              <mat-option value="">Cualquier mes</mat-option>
+              @for (mo of captureMonthLabels; track mo.value) {
+                <mat-option [value]="mo.value">{{ mo.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
         </div>
+        <p class="text-xs text-slate-500 mt-3 max-w-3xl">
+          <strong class="text-slate-400">Mes y año de captura</strong> ajustan automáticamente «Desde» y «Hasta» a ese mes.
+          Combínalos con torre y departamento para un lote concreto (p. ej. abril 2026, Torre A, P 03).
+          La exportación (tabla o ZIP de fotos) incluye solo las filas visibles tras los filtros.
+        </p>
 
         @if (hasActiveFilters()) {
           <button mat-stroked-button class="!border-slate-600 !text-slate-400 mt-2" (click)="clearFilters()">
@@ -203,6 +287,15 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
         </p>
       </div>
 
+      @if (viewMode() === 'coverage' && !showTrash()) {
+        <app-measurement-coverage
+          [filterBuilding]="filterBuilding"
+          [filterTower]="filterTower"
+          [filterCycle]="filterCycle"
+          [filterYear]="filterYearPreset"
+          [filterMonth]="filterMonthPreset"
+        />
+      } @else {
       <!-- Table -->
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div class="overflow-x-auto">
@@ -253,7 +346,15 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
             <ng-container matColumnDef="apartment">
               <th mat-header-cell *matHeaderCellDef mat-sort-header class="!bg-slate-800 !text-slate-400 !font-semibold !text-xs !border-b-slate-700">Depto</th>
               <td mat-cell *matCellDef="let row" class="!bg-transparent !text-slate-200 !border-b-slate-700/50">
-                {{ row.apartment }}
+                <span class="inline-flex items-center gap-1.5">
+                  {{ row.apartment }}
+                  @if (duplicateCountFor(row) > 1) {
+                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                          [matTooltip]="'Hay ' + duplicateCountFor(row) + ' mediciones de este depto en ' + monthLabelFor(row)">
+                      {{ duplicateCountFor(row) }}x
+                    </span>
+                  }
+                </span>
               </td>
             </ng-container>
 
@@ -400,11 +501,12 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
         <mat-paginator
           [length]="displayData().length"
           [pageSize]="pageSize()"
-          [pageSizeOptions]="[5, 10, 25]"
+          [pageSizeOptions]="[10, 25, 50, 100, 250, 500]"
           (page)="onPageChange($event)"
           class="!bg-slate-800 !text-slate-400 !border-t !border-slate-700"
         />
       </div>
+      }
     </div>
   `,
   styles: [`
@@ -428,16 +530,41 @@ import { ExportService, ExportColumn, ExportFormat } from '../../shared/utils/ex
 })
 export class MeasurementsComponent implements OnInit, OnDestroy {
   readonly formatMeterReadingDisplay = formatMeterReadingDisplay;
+  readonly captureMonthLabels = [
+    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' },
+    { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
+    { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' },
+  ] as const;
+
+  readonly availableYears = computed(() => {
+    const ys = new Set<number>();
+    // Siempre incluir el año actual aunque no tenga mediciones aún (para autocompletado en cobertura).
+    ys.add(new Date().getFullYear());
+    for (const m of this.measurementService.measurements()) {
+      const y = new Date(m.captured_at).getFullYear();
+      if (!Number.isNaN(y)) ys.add(y);
+    }
+    return [...ys].sort((a, b) => b - a);
+  });
+
   private readonly measurementService = inject(MeasurementService);
   readonly cycleService = inject(CycleService);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotificationService);
   private readonly exportService = inject(ExportService);
+  private readonly photoExport = inject(MeasurementPhotoExportService);
+
+  exportZipBusy = false;
+  filterYearPreset: number | '' = '';
+  filterMonthPreset: number | '' = '';
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _dialogOpen = false;
 
   readonly towers = this.measurementService.towers;
   readonly buildings = this.measurementService.buildings;
+  /** Estado de carga global (loadAll en vuelo, sea manual o por auto-refresh cada 30s). */
+  readonly loading = this.measurementService.loading;
 
   filterTower = '';
   filterBuilding = '';
@@ -446,6 +573,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   filterDateFrom = '';
   filterDateTo = '';
   filterCycle = '';
+  filterDuplicates: '' | 'duplicates' | 'unique' = '';
 
   filterDateFromObj: Date | null = null;
   filterDateToObj: Date | null = null;
@@ -454,6 +582,8 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   readonly trashColumns = ['photo', 'building_name', 'tower', 'apartment', 'meter_id', 'reading_value', 'captured_at', 'deleted_meta', 'actions_trash'];
 
   readonly showTrash = signal(false);
+  /** 'table' = listado paginado tradicional · 'coverage' = grilla de deptos por torre. */
+  readonly viewMode = signal<'table' | 'coverage'>('table');
 
   readonly filteredData = signal<Measurement[]>([]);
   readonly pageSize = signal(10);
@@ -462,6 +592,100 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   readonly displayData = computed(() =>
     this.showTrash() ? this.measurementService.trash() : this.filteredData()
   );
+
+  /** Número de pendientes en el dataset cargado (no depende del estado de filtros). */
+  readonly pendingCount = computed(() =>
+    this.measurementService.measurements().filter(m => m.status === 'pending_review').length
+  );
+
+  /** Estado del atajo "Pendientes": activo cuando filterStatus está fijado a pending_review. */
+  readonly pendingOnly = signal(false);
+
+  showOnlyPending(): void {
+    this.showTrash.set(false);
+    this.filterStatus = 'pending_review';
+    this.pendingOnly.set(true);
+    this.applyFilters();
+  }
+
+  showOnlyDuplicates(): void {
+    this.showTrash.set(false);
+    this.filterDuplicates = this.filterDuplicates === 'duplicates' ? '' : 'duplicates';
+    this.applyFilters();
+  }
+
+  toggleViewMode(): void {
+    const next = this.viewMode() === 'coverage' ? 'table' : 'coverage';
+    this.viewMode.set(next);
+    if (next !== 'coverage') return;
+
+    // Cobertura no aplica sobre Papelera.
+    this.showTrash.set(false);
+
+    // Defaults inteligentes solo al entrar (no pisan filtros que el usuario ya puso).
+    const now = new Date();
+    let touched = false;
+    if (this.filterYearPreset === '') {
+      this.filterYearPreset = now.getFullYear();
+      touched = true;
+    }
+    if (this.filterMonthPreset === '') {
+      this.filterMonthPreset = now.getMonth() + 1;
+      touched = true;
+    }
+    if (!this.filterBuilding) {
+      const bs = this.buildings();
+      if (bs.length === 1) {
+        this.filterBuilding = bs[0];
+        touched = true;
+      }
+    }
+    if (touched) {
+      // Sincroniza las fechas Desde/Hasta con el preset año+mes y reaplica filtros.
+      this.onCaptureMonthPresetChange();
+    }
+  }
+
+  /**
+   * Conteo de filas duplicadas calculado sobre TODO el dataset (no depende de filtros activos).
+   * Clave: building_name + tower + apartment + YYYY-MM (mismo depto físico mismo mes calendario).
+   */
+  readonly duplicateCounts = computed(() => {
+    const map = new Map<string, number>();
+    for (const m of this.measurementService.measurements()) {
+      const key = this._duplicateKey(m);
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  });
+
+  /** Total de filas que pertenecen a un grupo con 2+ mediciones (cuenta cada repetida individualmente). */
+  readonly duplicateRowsCount = computed(() => {
+    let n = 0;
+    for (const v of this.duplicateCounts().values()) {
+      if (v > 1) n += v;
+    }
+    return n;
+  });
+
+  duplicateCountFor(m: Measurement): number {
+    return this.duplicateCounts().get(this._duplicateKey(m)) ?? 0;
+  }
+
+  monthLabelFor(m: Measurement): string {
+    const d = new Date(m.captured_at);
+    if (Number.isNaN(d.getTime())) return '—';
+    const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  private _duplicateKey(m: Measurement): string {
+    const d = new Date(m.captured_at);
+    const ym = Number.isNaN(d.getTime())
+      ? 'unknown'
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `${m.building_name ?? ''}::${m.tower ?? ''}::${m.apartment ?? ''}::${ym}`;
+  }
 
   ngOnInit(): void {
     // Sin rango por defecto: se listan todas las mediciones cargadas; fechas y ciclo son opcionales.
@@ -478,48 +702,68 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
+    // Evita apilar cargas si el auto-tick (cada 30s) llega mientras la anterior
+    // aún no termina — útil con datasets grandes que tardan varios segundos.
+    if (this.loading()) return;
     this.measurementService.loadAll();
     this.measurementService.loadTrash();
   }
 
   exportMeasurements(format: ExportFormat): void {
-    const statusLabel: Record<Measurement['status'], string> = {
-      verified: 'Validada',
-      pending_review: 'Pendiente',
-      rejected: 'Rechazada',
+    const cleanTower = (t: string | undefined): string =>
+      String(t ?? '').replace(/^\s*torre\s+/i, '').trim().toUpperCase();
+    const apartmentSortKey = (a: string | undefined): number => {
+      const digits = String(a ?? '').replace(/\D/g, '');
+      const n = parseInt(digits, 10);
+      return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
     };
-    const meterTypeLabel: Record<Measurement['meter_type'], string> = {
-      analog: 'Analógico',
-      digital_drum: 'Digital tambor',
-      digital: 'Digital',
-    };
+    const sortedRows = [...this.displayData()].sort((a, b) => {
+      // Torre primero (A → B → …); fallback localeCompare por si hay nombres tipo "Norte".
+      const tA = cleanTower(a.tower);
+      const tB = cleanTower(b.tower);
+      if (tA !== tB) return tA.localeCompare(tB);
+      // Depto numérico ascendente; fallback string para apartamentos no numéricos.
+      const apA = apartmentSortKey(a.apartment);
+      const apB = apartmentSortKey(b.apartment);
+      if (apA !== apB) return apA - apB;
+      return String(a.apartment ?? '').localeCompare(String(b.apartment ?? ''));
+    });
+
     const columns: ExportColumn<Measurement>[] = [
-      { header: 'ID', key: 'id' },
-      { header: 'Edificio', key: 'building_name' },
-      { header: 'Torre', key: 'tower' },
-      { header: 'Depto', key: 'apartment' },
-      { header: 'Medidor', key: 'meter_id' },
-      { header: 'Lectura', key: 'reading_value' },
-      { header: 'Unidad', key: 'unit' },
-      { header: 'Estado', key: 'status', format: v => statusLabel[v as Measurement['status']] ?? String(v) },
-      { header: 'Tipo medidor', key: 'meter_type', format: v => meterTypeLabel[v as Measurement['meter_type']] ?? String(v) },
-      { header: 'Operador', key: row => row.operator_name ?? row.operator_id },
-      { header: 'Capturada', key: 'captured_at' },
-      { header: 'Ciclo', key: row => row.cycle_name ?? '' },
-      { header: 'OCR (IA)', key: row => row.ocr_value ?? '' },
-      { header: 'IA coincide', key: row => row.ai_agrees_with_operator == null ? '' : (row.ai_agrees_with_operator ? 'Sí' : 'No') },
-      { header: 'Latitud', key: row => row.location_coords?.lat ?? '' },
-      { header: 'Longitud', key: row => row.location_coords?.lng ?? '' },
-      { header: 'Foto URL', key: 'photo_url' },
+      {
+        header: 'Depto',
+        key: row => {
+          const towerLetter = String(row.tower ?? '').replace(/^\s*torre\s+/i, '').trim();
+          return towerLetter ? `${row.apartment}-${towerLetter}` : String(row.apartment ?? '');
+        },
+        highlight: true,
+        numFmt: '@',
+      },
+      {
+        header: 'Lectura',
+        key: 'reading_value',
+        format: (_v, row) =>
+          row.reading_value == null ? '' : formatMeterReadingDisplay(row.reading_value, row.reading_layout),
+        highlight: true,
+        numFmt: '@',
+      },
     ];
     const prefix = this.showTrash() ? 'mediciones_papelera' : 'mediciones';
     const fileName = this.exportService.buildFileName(prefix);
-    this.exportService.export(this.displayData(), columns, fileName, format, 'Mediciones');
+    this.exportService.export(sortedRows, columns, fileName, format, 'Mediciones');
   }
 
   setTrashMode(v: boolean): void {
     this.showTrash.set(v);
     this.pageIndex.set(0);
+    // Salir del atajo "Pendientes" cuando se vuelve a Activas o se va a Papelera.
+    if (this.pendingOnly()) {
+      this.pendingOnly.set(false);
+      if (this.filterStatus === 'pending_review') {
+        this.filterStatus = '';
+        this.applyFilters();
+      }
+    }
     if (v) {
       this.measurementService.loadTrash();
     }
@@ -536,12 +780,82 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     return data.slice(start, start + this.pageSize());
   });
 
-  readonly hasActiveFilters = computed(() =>
-    !!(this.filterTower || this.filterBuilding || this.filterApartment || this.filterStatus || this.filterDateFrom || this.filterDateTo || this.filterCycle)
-  );
+  hasActiveFilters(): boolean {
+    return !!(
+      this.filterTower ||
+      this.filterBuilding ||
+      this.filterApartment ||
+      this.filterStatus ||
+      this.filterDateFrom ||
+      this.filterDateTo ||
+      this.filterCycle ||
+      this.filterDuplicates ||
+      this.filterYearPreset !== '' ||
+      this.filterMonthPreset !== ''
+    );
+  }
+
+  photosInDisplayCount(): number {
+    return this.displayData().filter(m => !!m.photo_url?.trim()).length;
+  }
+
+  async exportPhotosZip(): Promise<void> {
+    if (this.exportZipBusy) return;
+    const rows = this.displayData();
+    const ids = this.photoExport.collectIds(rows);
+    if (ids.length === 0) {
+      this.notify.info('No hay mediciones con foto en la vista actual.');
+      return;
+    }
+    this.exportZipBusy = true;
+
+    const handle = this.photoExport.buildZipFromIds(ids);
+    const progressRef = this.dialog.open(ZipProgressDialogComponent, {
+      data: { count: ids.length, cancel: () => handle.cancel() },
+      panelClass: 'dark-dialog',
+      disableClose: true,
+      autoFocus: false,
+      restoreFocus: false,
+    });
+
+    try {
+      const { blob, included, skipped } = await handle.result;
+      progressRef.close();
+      const name = this.exportService.buildFileName('fotos_mediciones');
+      this.photoExport.triggerDownload(blob, `${name}.zip`);
+      const extra = skipped > 0 ? ` · ${skipped} sin archivo en disco` : '';
+      this.notify.success(`${included} foto(s) en el ZIP${extra}`);
+    } catch (e: unknown) {
+      progressRef.close();
+      if (e === ZIP_CANCELLED) {
+        this.notify.info('Descarga cancelada');
+      } else {
+        const msg = e instanceof Error ? e.message : 'No se pudieron empaquetar las fotos';
+        this.notify.error(msg);
+      }
+    } finally {
+      this.exportZipBusy = false;
+    }
+  }
+
+  onCaptureMonthPresetChange(): void {
+    if (this.filterYearPreset !== '' && this.filterMonthPreset !== '') {
+      const y = Number(this.filterYearPreset);
+      const mo = Number(this.filterMonthPreset);
+      this.filterDateFromObj = new Date(y, mo - 1, 1);
+      this.filterDateToObj = new Date(y, mo, 0);
+      this.filterDateFrom = this._formatDate(this.filterDateFromObj);
+      this.filterDateTo = this._formatDate(this.filterDateToObj);
+    }
+    this.applyFilters();
+  }
 
   applyFilters(): void {
-    const result = this.measurementService.getFilteredMeasurements({
+    // Si el usuario cambia manualmente el filtro de estado a otra cosa, salir del modo "Pendientes".
+    if (this.pendingOnly() && this.filterStatus !== 'pending_review') {
+      this.pendingOnly.set(false);
+    }
+    let result = this.measurementService.getFilteredMeasurements({
       cycleId: this.filterCycle || undefined,
       building: this.filterBuilding || undefined,
       tower: this.filterTower || undefined,
@@ -550,6 +864,23 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
       dateFrom: this.filterDateFrom || undefined,
       dateTo: this.filterDateTo || undefined,
     });
+    if (this.filterDuplicates) {
+      const counts = this.duplicateCounts();
+      result = result.filter(m => {
+        const c = counts.get(this._duplicateKey(m)) ?? 0;
+        return this.filterDuplicates === 'duplicates' ? c > 1 : c <= 1;
+      });
+      // Cuando solo se ven repetidos, agruparlos visualmente: mismo depto+mes adyacente,
+      // y dentro de cada grupo, lo más reciente arriba para comparar fácil.
+      if (this.filterDuplicates === 'duplicates') {
+        result = [...result].sort((a, b) => {
+          const ka = this._duplicateKey(a);
+          const kb = this._duplicateKey(b);
+          if (ka !== kb) return ka.localeCompare(kb);
+          return new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime();
+        });
+      }
+    }
     this.filteredData.set(result);
     this.pageIndex.set(0);
   }
@@ -585,6 +916,10 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.filterDateFromObj = null;
     this.filterDateToObj = null;
     this.filterCycle = '';
+    this.filterDuplicates = '';
+    this.filterYearPreset = '';
+    this.filterMonthPreset = '';
+    this.pendingOnly.set(false);
     this.applyFilters();
   }
 
