@@ -799,6 +799,22 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     return this.displayData().filter(m => !!m.photo_url?.trim()).length;
   }
 
+  /**
+   * Etiqueta de período para el ZIP: `2026 Abril` (Año + Mes preset),
+   * o el nombre del ciclo seleccionado, o vacío para que el backend infiera.
+   */
+  private currentPeriodLabel(): string {
+    if (this.filterCycle) {
+      const c = this.cycleService.cycles().find(x => x.id === this.filterCycle);
+      if (c?.name) return c.name;
+    }
+    if (this.filterYearPreset !== '' && this.filterMonthPreset !== '') {
+      const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      return `${this.filterYearPreset} ${months[Number(this.filterMonthPreset) - 1]}`;
+    }
+    return '';
+  }
+
   async exportPhotosZip(): Promise<void> {
     if (this.exportZipBusy) return;
     const rows = this.displayData();
@@ -809,7 +825,7 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     }
     this.exportZipBusy = true;
 
-    const handle = this.photoExport.buildZipFromIds(ids);
+    const handle = this.photoExport.buildZipFromIds(ids, this.currentPeriodLabel());
     const progressRef = this.dialog.open(ZipProgressDialogComponent, {
       data: { count: ids.length, cancel: () => handle.cancel() },
       panelClass: 'dark-dialog',

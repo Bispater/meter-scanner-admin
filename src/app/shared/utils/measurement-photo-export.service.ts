@@ -47,8 +47,12 @@ export class MeasurementPhotoExportService {
    * `cancel()` aborta la petición HTTP via Subscription.unsubscribe(); la promesa
    * se rechaza con la string `ZIP_CANCELLED` para que el caller distinga aborto
    * de error real.
+   *
+   * `periodLabel` se concatena al nombre de la carpeta raíz del ZIP
+   * (ej. "Lord Cochrane 2026 Abril"); si no se envía, el backend intenta inferirlo
+   * cuando todas las mediciones caen en el mismo mes.
    */
-  buildZipFromIds(ids: number[]): PhotoZipHandle {
+  buildZipFromIds(ids: number[], periodLabel?: string): PhotoZipHandle {
     if (!ids.length) {
       return {
         cancel: () => {},
@@ -59,8 +63,10 @@ export class MeasurementPhotoExportService {
     let cancelFn: () => void = () => {};
     const result = new Promise<PhotoZipResult>((resolve, reject) => {
       let cancelled = false;
+      const body: { measurement_ids: number[]; period_label?: string } = { measurement_ids: ids };
+      if (periodLabel?.trim()) body.period_label = periodLabel.trim();
       const sub = this.http
-        .post(`${this.url}/photos-zip/`, { measurement_ids: ids }, {
+        .post(`${this.url}/photos-zip/`, body, {
           responseType: 'blob',
           observe: 'response',
         })
