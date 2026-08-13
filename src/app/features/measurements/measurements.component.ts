@@ -1,4 +1,5 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
@@ -13,6 +14,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { Measurement } from '../../core/models/measurement.model';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -46,6 +48,7 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
     MatTooltipModule,
     MatDatepickerModule,
     MatMenuModule,
+    MatProgressSpinnerModule,
     MeasurementCoverageComponent,
   ],
   template: `
@@ -143,10 +146,31 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
                   class="!bg-cyan-600 !text-white cursor-pointer"
                   (click)="refresh()"
                   [disabled]="loading()"
-                  [matTooltip]="loading() ? 'Sincronizando con el servidor…' : 'Actualizar datos (auto cada 30s)'">
+                  [matTooltip]="loading() ? 'Sincronizando con el servidor…' : 'Actualizar datos ahora'">
             <mat-icon [class.animate-spin]="loading()">{{ loading() ? 'progress_activity' : 'refresh' }}</mat-icon>
             <span>{{ loading() ? 'Actualizando…' : 'Actualizar' }}</span>
           </button>
+          <button mat-stroked-button
+                  [class]="autoRefreshSecs() > 0 ? '!border-cyan-500/60 !text-cyan-300' : '!border-slate-600 !text-slate-300'"
+                  class="cursor-pointer"
+                  [matMenuTriggerFor]="autoRefreshMenu"
+                  matTooltip="Programar actualización automática (desactivada por defecto)">
+            <mat-icon>schedule</mat-icon> {{ autoRefreshLabel() }}
+          </button>
+          <mat-menu #autoRefreshMenu="matMenu">
+            <button mat-menu-item (click)="setAutoRefresh(0)">
+              <mat-icon>block</mat-icon><span>Desactivada (por defecto)</span>
+            </button>
+            <button mat-menu-item (click)="setAutoRefresh(30)">
+              <mat-icon>schedule</mat-icon><span>Cada 30 segundos</span>
+            </button>
+            <button mat-menu-item (click)="setAutoRefresh(60)">
+              <mat-icon>schedule</mat-icon><span>Cada 1 minuto</span>
+            </button>
+            <button mat-menu-item (click)="setAutoRefresh(300)">
+              <mat-icon>schedule</mat-icon><span>Cada 5 minutos</span>
+            </button>
+          </mat-menu>
         </div>
       </div>
 
@@ -157,26 +181,73 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
           <mat-icon class="text-slate-400" style="font-size:18px;width:18px;height:18px;">filter_list</mat-icon>
           <span class="text-sm font-semibold text-slate-300">Filtros</span>
         </div>
-        <!-- Ciclo: opcional; filtra por el ciclo real de la medición (no solo fechas). -->
-        <div class="mb-3 flex flex-col gap-1">
-          <mat-form-field appearance="outline" class="dense-field w-full md:w-[28rem]">
-            <mat-label>Ciclo (opcional)</mat-label>
-            <mat-select [(ngModel)]="filterCycle" (ngModelChange)="onCycleFilterChange($event)">
-              <mat-option value="">Todos los ciclos</mat-option>
-              @for (c of cycleService.cycles(); track c.id) {
-                <mat-option [value]="c.id">
-                  {{ c.name }} — {{ c.building_name }}
-                </mat-option>
+        <!-- Búsqueda principal: mes + año → trae SOLO ese mes del servidor -->
+        <div class="flex flex-wrap items-center gap-3">
+          <mat-form-field appearance="outline" class="dense-field w-full sm:w-44">
+            <mat-label>Mes (captura)</mat-label>
+            <mat-select [(ngModel)]="filterMonthPreset" (ngModelChange)="onCaptureMonthPresetChange()">
+              <mat-option value="">Cualquier mes</mat-option>
+              @for (mo of captureMonthLabels; track mo.value) {
+                <mat-option [value]="mo.value">{{ mo.label }}</mat-option>
               }
             </mat-select>
           </mat-form-field>
-          <p class="text-xs text-slate-500 max-w-xl">
-            Si eliges un ciclo, se muestran solo mediciones <strong class="text-slate-400">asignadas a ese ciclo</strong> en el sistema.
-            Las fechas abajo son opcionales para acotar por día de captura.
-          </p>
+
+          <mat-form-field appearance="outline" class="dense-field w-full sm:w-36">
+            <mat-label>Año (captura)</mat-label>
+            <mat-select [(ngModel)]="filterYearPreset" (ngModelChange)="onCaptureMonthPresetChange()">
+              <mat-option value="">Cualquier año</mat-option>
+              @for (y of availableYears(); track y) {
+                <mat-option [value]="y">{{ y }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <button mat-flat-button color="primary" [disabled]="loading()" (click)="searchNow()">
+            <mat-icon>search</mat-icon> Buscar
+          </button>
+          @if (hasActiveFilters()) {
+            <button mat-stroked-button class="!border-slate-600 !text-slate-400" (click)="clearFilters()">
+              <mat-icon>clear</mat-icon> Limpiar filtros
+            </button>
+          }
+          <button mat-stroked-button
+                  [class]="showAdvancedFilters() ? '!border-cyan-500/60 !text-cyan-300' : '!border-slate-600 !text-slate-300'"
+                  (click)="showAdvancedFilters.set(!showAdvancedFilters())">
+            <mat-icon>{{ showAdvancedFilters() ? 'expand_less' : 'tune' }}</mat-icon>
+            Más filtros{{ advancedFilterCount() > 0 ? ' (' + advancedFilterCount() + ')' : '' }}
+          </button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 items-start">
+        <p class="text-xs text-slate-500 mt-2 max-w-3xl">
+          Elige un <strong class="text-slate-400">mes</strong> y pulsa <strong class="text-slate-400">Buscar</strong>
+          (sin año se asume el actual). Con la data cargada, abre
+          <strong class="text-slate-400">«Más filtros»</strong> para refinar por ciclo, edificio, torre,
+          departamento, estado o fechas. La exportación incluye solo las filas visibles.
+        </p>
+
+        @if (showAdvancedFilters()) {
+        <div class="mt-4 pt-4 border-t border-slate-700">
+          <!-- Ciclo: opcional; filtra por el ciclo real de la medición (no solo fechas). -->
+          <div class="mb-3 flex flex-col gap-1">
+            <mat-form-field appearance="outline" class="dense-field w-full md:w-[28rem]">
+              <mat-label>Ciclo (opcional)</mat-label>
+              <mat-select [(ngModel)]="filterCycle" (ngModelChange)="onCycleFilterChange($event)">
+                <mat-option value="">Todos los ciclos</mat-option>
+                @for (c of cycleService.cycles(); track c.id) {
+                  <mat-option [value]="c.id">
+                    {{ c.name }} — {{ c.building_name }}
+                  </mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <p class="text-xs text-slate-500 max-w-xl">
+              Si eliges un ciclo, se muestran solo mediciones <strong class="text-slate-400">asignadas a ese ciclo</strong> en el sistema.
+              Las fechas abajo son opcionales para acotar por día de captura.
+            </p>
+          </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 items-start">
           <mat-form-field appearance="outline" class="dense-field w-full">
             <mat-label>Edificio</mat-label>
             <mat-select [(ngModel)]="filterBuilding" (ngModelChange)="applyFilters()">
@@ -238,36 +309,8 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
             <mat-datepicker #toPicker></mat-datepicker>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="dense-field w-full">
-            <mat-label>Año (captura)</mat-label>
-            <mat-select [(ngModel)]="filterYearPreset" (ngModelChange)="onCaptureMonthPresetChange()">
-              <mat-option value="">Cualquier año</mat-option>
-              @for (y of availableYears(); track y) {
-                <mat-option [value]="y">{{ y }}</mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="dense-field w-full">
-            <mat-label>Mes (captura)</mat-label>
-            <mat-select [(ngModel)]="filterMonthPreset" (ngModelChange)="onCaptureMonthPresetChange()">
-              <mat-option value="">Cualquier mes</mat-option>
-              @for (mo of captureMonthLabels; track mo.value) {
-                <mat-option [value]="mo.value">{{ mo.label }}</mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
         </div>
-        <p class="text-xs text-slate-500 mt-3 max-w-3xl">
-          <strong class="text-slate-400">Mes y año de captura</strong> ajustan automáticamente «Desde» y «Hasta» a ese mes.
-          Combínalos con torre y departamento para un lote concreto (p. ej. abril 2026, Torre A, P 03).
-          La exportación (tabla o ZIP de fotos) incluye solo las filas visibles tras los filtros.
-        </p>
-
-        @if (hasActiveFilters()) {
-          <button mat-stroked-button class="!border-slate-600 !text-slate-400 mt-2" (click)="clearFilters()">
-            <mat-icon>clear</mat-icon> Limpiar filtros
-          </button>
+        </div>
         }
       </div>
       } @else {
@@ -298,7 +341,7 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
       } @else {
       <!-- Table -->
       <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto transition-opacity" [class.opacity-50]="loading()" [class.pointer-events-none]="loading()">
           @if (!showTrash()) {
           <table mat-table [dataSource]="paginatedData()" matSort (matSortChange)="onSort($event)"
                  class="w-full !bg-transparent">
@@ -489,11 +532,26 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
           }
         </div>
 
-        @if (displayData().length === 0) {
+        @if (loading() && displayData().length === 0) {
+          <div class="py-16 flex flex-col items-center gap-4">
+            <mat-spinner diameter="44"></mat-spinner>
+            <p class="text-slate-400 text-sm">Cargando mediciones…</p>
+          </div>
+        } @else if (displayData().length === 0) {
           <div class="py-16 text-center">
-            <mat-icon class="text-slate-600" style="font-size:48px;width:48px;height:48px;">search_off</mat-icon>
+            <mat-icon class="text-slate-600" style="font-size:48px;width:48px;height:48px;">
+              {{ showTrash() || hasLoadedScope() ? 'search_off' : 'filter_alt' }}
+            </mat-icon>
             <p class="text-slate-400 mt-3">
-              @if (showTrash()) { La papelera está vacía. } @else { No se encontraron mediciones con los filtros aplicados. }
+              @if (showTrash()) {
+                La papelera está vacía.
+              } @else if (!hasLoadedScope()) {
+                Elige un <strong class="text-slate-300">mes</strong> y pulsa
+                <strong class="text-slate-300">«Buscar»</strong>, o usa
+                <strong class="text-amber-300">«Pendientes»</strong> para cargar mediciones.
+              } @else {
+                No se encontraron mediciones con los filtros aplicados.
+              }
             </p>
           </div>
         }
@@ -523,6 +581,11 @@ import { ZipProgressDialogComponent } from './zip-progress-dialog.component';
       height: 48px !important;
       align-items: center !important;
     }
+    /* Sin espacio de subscript (errores/hints): permite centrar verticalmente
+       los botones junto a los selects en la fila de búsqueda. */
+    ::ng-deep .dense-field .mat-mdc-form-field-subscript-wrapper {
+      display: none !important;
+    }
     ::ng-deep .mat-mdc-header-cell { white-space: nowrap; }
     ::ng-deep .mat-sort-header-arrow { color: #94a3b8 !important; }
     ::ng-deep .mat-mdc-paginator { border-radius: 0 0 12px 12px; }
@@ -539,8 +602,10 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
 
   readonly availableYears = computed(() => {
     const ys = new Set<number>();
-    // Siempre incluir el año actual aunque no tenga mediciones aún (para autocompletado en cobertura).
-    ys.add(new Date().getFullYear());
+    // Ofrecer el año actual y los 4 anteriores aunque el dataset cargado sea solo el
+    // mes en curso — así el usuario puede elegir un mes pasado y se trae del servidor.
+    const currentYear = new Date().getFullYear();
+    for (let i = 0; i <= 4; i++) ys.add(currentYear - i);
     for (const m of this.measurementService.measurements()) {
       const y = new Date(m.captured_at).getFullYear();
       if (!Number.isNaN(y)) ys.add(y);
@@ -554,12 +619,14 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   private readonly notify = inject(NotificationService);
   private readonly exportService = inject(ExportService);
   private readonly photoExport = inject(MeasurementPhotoExportService);
+  private readonly route = inject(ActivatedRoute);
 
   exportZipBusy = false;
   filterYearPreset: number | '' = '';
   filterMonthPreset: number | '' = '';
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _dialogOpen = false;
+  private _offLoaded: (() => void) | null = null;
 
   readonly towers = this.measurementService.towers;
   readonly buildings = this.measurementService.buildings;
@@ -593,18 +660,64 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.showTrash() ? this.measurementService.trash() : this.filteredData()
   );
 
-  /** Número de pendientes en el dataset cargado (no depende del estado de filtros). */
-  readonly pendingCount = computed(() =>
-    this.measurementService.measurements().filter(m => m.status === 'pending_review').length
-  );
+  /**
+   * Número de pendientes GLOBAL (del endpoint de resumen del Dashboard), con
+   * fallback al dataset cargado si el resumen aún no llega.
+   */
+  readonly pendingCount = computed(() => {
+    const summary = this.measurementService.dashboardSummary();
+    if (summary) return summary.statusCounts.pending_review;
+    return this.measurementService.measurements().filter(m => m.status === 'pending_review').length;
+  });
+
+  /** True si hay algún dataset cargado (para distinguir "sin filtro" de "sin resultados"). */
+  readonly hasLoadedScope = computed(() => this.measurementService.scope() !== null);
 
   /** Estado del atajo "Pendientes": activo cuando filterStatus está fijado a pending_review. */
   readonly pendingOnly = signal(false);
+
+  /** Panel «Más filtros» (ciclo, edificio, torre, depto, estado, fechas) plegado por defecto. */
+  readonly showAdvancedFilters = signal(false);
+
+  /** Cuántos filtros avanzados están activos (para el badge del botón «Más filtros»). */
+  advancedFilterCount(): number {
+    let n = 0;
+    if (this.filterCycle) n++;
+    if (this.filterBuilding) n++;
+    if (this.filterTower) n++;
+    if (this.filterApartment) n++;
+    if (this.filterStatus) n++;
+    if (this.filterDuplicates) n++;
+    if (this.filterDateFrom || this.filterDateTo) {
+      // Las fechas sincronizadas automáticamente con el preset mes+año no cuentan
+      // como filtro "extra" del usuario.
+      const y = Number(this.filterYearPreset);
+      const mo = Number(this.filterMonthPreset);
+      const isPresetSync =
+        this.filterYearPreset !== '' && this.filterMonthPreset !== '' &&
+        this.filterDateFrom === this._formatDate(new Date(y, mo - 1, 1)) &&
+        this.filterDateTo === this._formatDate(new Date(y, mo, 0));
+      if (!isPresetSync) n++;
+    }
+    return n;
+  }
 
   showOnlyPending(): void {
     this.showTrash.set(false);
     this.filterStatus = 'pending_review';
     this.pendingOnly.set(true);
+    // Trae del servidor SOLO las pendientes (histórico completo) — no requiere
+    // haber cargado un mes antes. Limpia presets para no acotar por fechas.
+    this.filterYearPreset = '';
+    this.filterMonthPreset = '';
+    this.filterDateFrom = '';
+    this.filterDateTo = '';
+    this.filterDateFromObj = null;
+    this.filterDateToObj = null;
+    const s = this.measurementService.scope();
+    if (!this.loading() && s?.kind !== 'pending') {
+      this.measurementService.loadPending();
+    }
     this.applyFilters();
   }
 
@@ -622,16 +735,19 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     // Cobertura no aplica sobre Papelera.
     this.showTrash.set(false);
 
-    // Defaults inteligentes solo al entrar (no pisan filtros que el usuario ya puso).
+    // Defaults inteligentes solo al entrar (no pisan filtros que el usuario ya puso;
+    // si hay un ciclo elegido, ese manda y no se fuerza mes/año).
     const now = new Date();
     let touched = false;
-    if (this.filterYearPreset === '') {
-      this.filterYearPreset = now.getFullYear();
-      touched = true;
-    }
-    if (this.filterMonthPreset === '') {
-      this.filterMonthPreset = now.getMonth() + 1;
-      touched = true;
+    if (!this.filterCycle) {
+      if (this.filterYearPreset === '') {
+        this.filterYearPreset = now.getFullYear();
+        touched = true;
+      }
+      if (this.filterMonthPreset === '') {
+        this.filterMonthPreset = now.getMonth() + 1;
+        touched = true;
+      }
     }
     if (!this.filterBuilding) {
       const bs = this.buildings();
@@ -688,25 +804,76 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    // Sin rango por defecto: se listan todas las mediciones cargadas; fechas y ciclo son opcionales.
+    // La tabla arranca VACÍA: no se pide nada al servidor hasta que el usuario
+    // elige un filtro (mes+año, ciclo o Pendientes). Si se vuelve a esta pantalla
+    // con un dataset ya cargado, se refleja ese alcance en los selectores.
+    this._offLoaded = this.measurementService.onLoaded(() => this.applyFilters());
 
-    this.measurementService.onLoaded(() => this.applyFilters());
-    if (this.measurementService.measurements().length > 0) {
-      this.applyFilters();
+    const scope = this.measurementService.scope();
+    if (scope?.kind === 'month') {
+      this.filterYearPreset = scope.year;
+      this.filterMonthPreset = scope.month;
+      this._syncDateRangeToPreset();
+    } else if (scope?.kind === 'cycle') {
+      this.filterCycle = scope.cycleId;
+    } else if (scope?.kind === 'pending') {
+      this.filterStatus = 'pending_review';
+      this.pendingOnly.set(true);
     }
-    this.refreshInterval = setInterval(() => this.refresh(), 30000);
+    if (scope) this.applyFilters();
+
+    // Si se vuelve con filtros avanzados ya activos, mostrar el panel desplegado.
+    if (this.filterCycle || this.filterStatus) this.showAdvancedFilters.set(true);
+
+    // Atajo desde el Dashboard: tarjeta «Pendientes» → /app/measurements?status=pending
+    if (!scope && this.route.snapshot.queryParamMap.get('status') === 'pending') {
+      this.showOnlyPending();
+    }
+
+    // Sin actualización automática por defecto: solo manual (botón «Actualizar»)
+    // o programada si el usuario la activa desde el menú «Auto».
   }
 
   ngOnDestroy(): void {
     if (this.refreshInterval) clearInterval(this.refreshInterval);
+    this._offLoaded?.();
+  }
+
+  /** Intervalo de actualización automática en segundos (0 = desactivada, el defecto). */
+  readonly autoRefreshSecs = signal(0);
+
+  autoRefreshLabel(): string {
+    const s = this.autoRefreshSecs();
+    if (s === 0) return 'Auto: off';
+    return s < 60 ? `Auto: ${s}s` : `Auto: ${s / 60}m`;
+  }
+
+  /** Activa/desactiva la recarga programada. Solo recarga lo ya cargado (reload es no-op sin alcance). */
+  setAutoRefresh(secs: number): void {
+    this.autoRefreshSecs.set(secs);
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+    if (secs > 0) {
+      this.refreshInterval = setInterval(() => this.refresh(), secs * 1000);
+      this.notify.info(`Actualización automática cada ${this.autoRefreshLabel().replace('Auto: ', '')}.`);
+    } else {
+      this.notify.info('Actualización automática desactivada.');
+    }
   }
 
   refresh(): void {
-    // Evita apilar cargas si el auto-tick (cada 30s) llega mientras la anterior
+    // Evita apilar cargas si un tick programado llega mientras la anterior
     // aún no termina — útil con datasets grandes que tardan varios segundos.
     if (this.loading()) return;
-    this.measurementService.loadAll();
-    this.measurementService.loadTrash();
+    if (this.showTrash()) {
+      // En la papelera solo interesa refrescar la papelera.
+      this.measurementService.loadTrash();
+      return;
+    }
+    // Recarga respetando el alcance actual (mes/ciclo/pendientes); sin alcance no hace nada.
+    this.measurementService.reload();
   }
 
   exportMeasurements(format: ExportFormat): void {
@@ -761,8 +928,13 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
       this.pendingOnly.set(false);
       if (this.filterStatus === 'pending_review') {
         this.filterStatus = '';
-        this.applyFilters();
       }
+      // El dataset cargado era "solo pendientes": al volver a Activas se vacía la
+      // tabla y se pide elegir un filtro (mes+año o ciclo) para cargar datos.
+      if (!v && this.measurementService.scope()?.kind === 'pending') {
+        this.measurementService.clear();
+      }
+      this.applyFilters();
     }
     if (v) {
       this.measurementService.loadTrash();
@@ -855,15 +1027,123 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
   }
 
   onCaptureMonthPresetChange(): void {
-    if (this.filterYearPreset !== '' && this.filterMonthPreset !== '') {
+    // UX: elegir un mes sin año asume el año actual — antes el selector quedaba
+    // "esperando" el año sin avisar y parecía que no llegaba la data.
+    if (this.filterMonthPreset !== '' && this.filterYearPreset === '') {
+      this.filterYearPreset = new Date().getFullYear();
+    }
+    const hasYear = this.filterYearPreset !== '';
+    const hasMonth = this.filterMonthPreset !== '';
+
+    if (hasYear && hasMonth) {
+      // Mes/año concretos → traer SOLO ese mes desde el servidor (rápido).
+      this._syncDateRangeToPreset();
       const y = Number(this.filterYearPreset);
       const mo = Number(this.filterMonthPreset);
-      this.filterDateFromObj = new Date(y, mo - 1, 1);
-      this.filterDateToObj = new Date(y, mo, 0);
-      this.filterDateFrom = this._formatDate(this.filterDateFromObj);
-      this.filterDateTo = this._formatDate(this.filterDateToObj);
+      const s = this.measurementService.scope();
+      // Elegir un mes desactiva el filtro por ciclo como fuente de datos.
+      if (this.filterCycle) this.filterCycle = '';
+      // Evita refetch redundante si ya está cargado ese mes.
+      if (!this.loading() && !(s?.kind === 'month' && s.year === y && s.month === mo)) {
+        this._announceResultsOnce(this._periodLabel(y, mo));
+        this.measurementService.loadMonth(y, mo);
+      }
+    } else {
+      this.filterDateFrom = '';
+      this.filterDateTo = '';
+      this.filterDateFromObj = null;
+      this.filterDateToObj = null;
+      if (!hasYear && !hasMonth) {
+        // «Cualquier mes/año»: si hay ciclo elegido se mantiene por ciclo; si había
+        // un dataset cargado, pasa a histórico completo (explícito); si no había
+        // nada cargado, la tabla sigue vacía hasta elegir un filtro.
+        const s = this.measurementService.scope();
+        if (this.filterCycle) {
+          this._loadCycleIfNeeded(this.filterCycle);
+        } else if (!this.loading() && s !== null && s.kind !== 'all') {
+          this.measurementService.loadAll();
+        }
+      }
+      // Con solo año o solo mes seleccionado, se espera a que el usuario complete
+      // el otro selector antes de consultar al servidor.
     }
     this.applyFilters();
+  }
+
+  /**
+   * Botón «Buscar»: fuerza la consulta al servidor con los filtros actuales
+   * (mes+año, ciclo o Pendientes) y anuncia el resultado en un snackbar.
+   */
+  searchNow(): void {
+    if (this.loading()) return;
+    if (this.filterMonthPreset !== '' && this.filterYearPreset === '') {
+      this.filterYearPreset = new Date().getFullYear();
+    }
+    if (this.filterYearPreset !== '' && this.filterMonthPreset !== '') {
+      this._syncDateRangeToPreset();
+      const y = Number(this.filterYearPreset);
+      const mo = Number(this.filterMonthPreset);
+      if (this.filterCycle) this.filterCycle = '';
+      this._announceResultsOnce(this._periodLabel(y, mo));
+      this.measurementService.loadMonth(y, mo);
+    } else if (this.filterCycle) {
+      this._announceResultsOnce('el ciclo seleccionado');
+      this.measurementService.loadCycle(this.filterCycle);
+    } else if (this.pendingOnly() || this.filterStatus === 'pending_review') {
+      this._announceResultsOnce('pendientes de validar');
+      this.measurementService.loadPending();
+    } else {
+      this.notify.info('Elige un mes (y opcionalmente año), un ciclo o «Pendientes» antes de buscar.');
+      return;
+    }
+    this.applyFilters();
+  }
+
+  /** «Julio 2026» a partir de año + mes (1-12). */
+  private _periodLabel(year: number, month: number): string {
+    const label = this.captureMonthLabels.find(m => Number(m.value) === month)?.label ?? `mes ${month}`;
+    return `${label} ${year}`;
+  }
+
+  /**
+   * Snackbar con el resultado de la PRÓXIMA carga que termine: cuántas filas
+   * llegaron para el período y cuántas quedan visibles tras los demás filtros.
+   * Se auto-desregistra (y expira a los 30 s si la carga falló y nunca llegó).
+   */
+  private _announceResultsOnce(label: string): void {
+    let off: () => void = () => {};
+    const timer = setTimeout(() => off(), 30000);
+    off = this.measurementService.onLoaded(() => {
+      clearTimeout(timer);
+      off();
+      const total = this.measurementService.measurements().length;
+      const visible = this.displayData().length;
+      if (total === 0) {
+        this.notify.info(`No hay mediciones para ${label}.`);
+      } else if (visible !== total) {
+        this.notify.success(`${total} mediciones para ${label} · ${visible} visibles con los filtros actuales.`);
+      } else {
+        this.notify.success(`${total} ${total === 1 ? 'medición encontrada' : 'mediciones encontradas'} para ${label}.`);
+      }
+    });
+  }
+
+  private _loadCycleIfNeeded(cycleId: string): void {
+    const s = this.measurementService.scope();
+    if (!this.loading() && !(s?.kind === 'cycle' && s.cycleId === cycleId)) {
+      this.measurementService.loadCycle(cycleId);
+    }
+  }
+
+  /** Ajusta «Desde»/«Hasta» al mes+año seleccionado (acotado dentro del mes cargado). */
+  private _syncDateRangeToPreset(): void {
+    if (this.filterYearPreset === '' || this.filterMonthPreset === '') return;
+    const y = Number(this.filterYearPreset);
+    const mo = Number(this.filterMonthPreset);
+    this.filterDateFromObj = new Date(y, mo - 1, 1);
+    this.filterDateToObj = new Date(y, mo, 0);
+    this.filterDateFrom = this._formatDate(this.filterDateFromObj);
+    this.filterDateTo = this._formatDate(this.filterDateToObj);
   }
 
   applyFilters(): void {
@@ -901,7 +1181,25 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.pageIndex.set(0);
   }
 
-  onCycleFilterChange(_cycleId: string): void {
+  onCycleFilterChange(cycleId: string): void {
+    if (cycleId) {
+      // El ciclo pasa a ser la fuente de datos (filtro en servidor): se limpian
+      // los presets de mes/año y el rango de fechas derivado.
+      this.filterYearPreset = '';
+      this.filterMonthPreset = '';
+      this.filterDateFrom = '';
+      this.filterDateTo = '';
+      this.filterDateFromObj = null;
+      this.filterDateToObj = null;
+      this._loadCycleIfNeeded(cycleId);
+    } else if (this.filterYearPreset !== '' && this.filterMonthPreset !== '') {
+      // Se quitó el ciclo pero hay mes+año elegidos → volver a ese mes.
+      this.onCaptureMonthPresetChange();
+      return;
+    } else {
+      // Sin ciclo ni mes+año: volver al estado vacío (elegir filtro para cargar).
+      this.measurementService.clear();
+    }
     this.applyFilters();
   }
 
@@ -927,15 +1225,17 @@ export class MeasurementsComponent implements OnInit, OnDestroy {
     this.filterBuilding = '';
     this.filterApartment = '';
     this.filterStatus = '';
-    this.filterDateFrom = '';
-    this.filterDateTo = '';
-    this.filterDateFromObj = null;
-    this.filterDateToObj = null;
     this.filterCycle = '';
     this.filterDuplicates = '';
     this.filterYearPreset = '';
     this.filterMonthPreset = '';
+    this.filterDateFrom = '';
+    this.filterDateTo = '';
+    this.filterDateFromObj = null;
+    this.filterDateToObj = null;
     this.pendingOnly.set(false);
+    // "Limpiar" vuelve al estado inicial: tabla vacía hasta elegir un filtro.
+    this.measurementService.clear();
     this.applyFilters();
   }
 

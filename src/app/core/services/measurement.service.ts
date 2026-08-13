@@ -55,6 +55,36 @@ interface ApiAudit {
 
 interface ApiPage<T> { count: number; next: string | null; previous?: string | null; results: T[]; }
 
+interface ApiDashboardSummary {
+  status_counts: { verified: number; pending_review: number; rejected: number };
+  verified_last_30_days: number;
+  monthly_counts: { year: number; month: number; count: number }[];
+  recent: ApiMeasurement[];
+}
+
+/** Agregados del Dashboard (todo el histórico), independientes del mes cargado en la tabla. */
+export interface DashboardSummary {
+  statusCounts: { verified: number; pending_review: number; rejected: number };
+  verifiedLast30Days: number;
+  monthlyCounts: { year: number; month: number; count: number }[];
+  recent: Measurement[];
+}
+
+/**
+ * Alcance del dataset cargado en la tabla:
+ * - null → no se ha pedido nada al servidor (estado inicial: tabla vacía).
+ * - month → solo el mes indicado.
+ * - cycle → solo mediciones asignadas a ese ciclo (filtro en servidor).
+ * - pending → solo pendientes de validar (todo el histórico, filtro en servidor).
+ * - all → histórico completo (bajo demanda explícita).
+ */
+export type LoadScope =
+  | { kind: 'month'; year: number; month: number }
+  | { kind: 'cycle'; cycleId: string }
+  | { kind: 'pending' }
+  | { kind: 'all' }
+  | null;
+
 @Injectable({ providedIn: 'root' })
 export class MeasurementService {
   private readonly http = inject(HttpClient);
@@ -64,15 +94,25 @@ export class MeasurementService {
   private readonly _measurements = signal<Measurement[]>([]);
   private readonly _trash = signal<Measurement[]>([]);
   private readonly _summary = signal<Summary>({ total_readings_today: 0, pending_alerts: 0, total_consumption_m3: 0 });
+  private readonly _dashboardSummary = signal<DashboardSummary | null>(null);
+
+  /**
+   * Alcance actualmente cargado en el dataset (ver LoadScope). null = nada cargado
+   * aún — la tabla arranca vacía y solo consulta al servidor cuando el usuario
+   * aplica un filtro. El auto-refresh y `reload()` respetan este alcance.
+   */
+  private readonly _scope = signal<LoadScope>(null);
+  readonly scope = this._scope.asReadonly();
 
   private readonly _loading = signal(false);
   readonly loading = this._loading.asReadonly();
-  private readonly _initialLoadPending = signal(true);
+  private readonly _initialLoadPending = signal(false);
   readonly initialLoadPending = this._initialLoadPending.asReadonly();
 
   readonly measurements = this._measurements.asReadonly();
   readonly trash = this._trash.asReadonly();
   readonly summary = this._summary.asReadonly();
+  readonly dashboardSummary = this._dashboardSummary.asReadonly();
 
   readonly towers = computed(() => {
     const all = this._measurements();
@@ -86,28 +126,77 @@ export class MeasurementService {
 
   private _onLoadedCallbacks: (() => void)[] = [];
 
-  onLoaded(cb: () => void): void {
+  /** Registra un callback post-carga. Devuelve la función para desuscribirse. */
+  onLoaded(cb: () => void): () => void {
     this._onLoadedCallbacks.push(cb);
+    return () => {
+      this._onLoadedCallbacks = this._onLoadedCallbacks.filter(c => c !== cb);
+    };
   }
 
   // ── Load from API ──
 
+  /** Carga todo el histórico (más lento; usar solo cuando el usuario pide "todos los meses"). */
   loadAll(): void {
+    this._scope.set({ kind: 'all' });
+    this._load(`${this.url}/?page_size=500&ordering=-captured_at`);
+  }
+
+  /**
+   * Carga solo las mediciones del mes indicado desde el servidor (rápido).
+   * @param year año (p. ej. 2026)
+   * @param month mes 1-12
+   */
+  loadMonth(year: number, month: number): void {
+    this._scope.set({ kind: 'month', year, month });
+    this._load(
+      `${this.url}/?captured_at__year=${year}&captured_at__month=${month}&page_size=500&ordering=-captured_at`,
+    );
+  }
+
+  /** Carga solo las mediciones asignadas al ciclo indicado (filtro en servidor). */
+  loadCycle(cycleId: string): void {
+    this._scope.set({ kind: 'cycle', cycleId });
+    this._load(`${this.url}/?cycle=${encodeURIComponent(cycleId)}&page_size=500&ordering=-captured_at`);
+  }
+
+  /** Carga solo las pendientes de validar, todo el histórico (filtro en servidor). */
+  loadPending(): void {
+    this._scope.set({ kind: 'pending' });
+    this._load(`${this.url}/?status=pending_review&page_size=500&ordering=-captured_at`);
+  }
+
+  /** Vacía el dataset y vuelve al estado inicial (nada cargado, tabla vacía). */
+  clear(): void {
+    this._scope.set(null);
+    this._measurements.set([]);
+    this._computeSummary([]);
+  }
+
+  /** Recarga respetando el alcance actual. Sin alcance (nada cargado) no hace nada. */
+  reload(): void {
+    const s = this._scope();
+    if (!s) return;
+    switch (s.kind) {
+      case 'month':   this.loadMonth(s.year, s.month); break;
+      case 'cycle':   this.loadCycle(s.cycleId);       break;
+      case 'pending': this.loadPending();              break;
+      case 'all':     this.loadAll();                  break;
+    }
+  }
+
+  private _load(first: string): void {
     this._loading.set(true);
     const acc: ApiMeasurement[] = [];
-    const first = `${this.url}/?page_size=500&ordering=-captured_at`;
     const fetchPage = (url: string): void => {
-      console.log('[MEASUREMENTS] GET', url);
       this.http.get<ApiPage<ApiMeasurement>>(url).subscribe({
         next: res => {
           acc.push(...(res.results ?? []));
           if (res.next) {
-            // El backend ignora page_size grande y devuelve <=20 por página.
-            // Seguir `next` hasta agotar resultados.
+            // Seguir `next` solo si el total supera el page_size máximo (500).
             fetchPage(res.next);
             return;
           }
-          console.log('[MEASUREMENTS] Loaded:', acc.length, 'measurements (total declarado:', res.count, ')');
           const mapped = acc.map(m => this._mapMeasurement(m));
           this._measurements.set(mapped);
           this._computeSummary(mapped);
@@ -124,6 +213,31 @@ export class MeasurementService {
       });
     };
     fetchPage(first);
+  }
+
+  /**
+   * Carga los agregados del Dashboard (todo el histórico) desde el endpoint liviano
+   * `/measurements/summary/`. No descarga todas las filas, por lo que es rápido aunque
+   * la tabla solo tenga cargado el mes en curso.
+   */
+  loadDashboardSummary(): void {
+    this.http.get<ApiDashboardSummary>(`${this.url}/summary/`).subscribe({
+      next: res => {
+        this._dashboardSummary.set({
+          statusCounts: {
+            verified: res.status_counts?.verified ?? 0,
+            pending_review: res.status_counts?.pending_review ?? 0,
+            rejected: res.status_counts?.rejected ?? 0,
+          },
+          verifiedLast30Days: res.verified_last_30_days ?? 0,
+          monthlyCounts: res.monthly_counts ?? [],
+          recent: (res.recent ?? []).map(m => this._mapMeasurement(m)),
+        });
+      },
+      error: err => {
+        console.error('[MEASUREMENTS] Summary load error:', err);
+      },
+    });
   }
 
   getFilteredMeasurements(filters: {
@@ -297,11 +411,9 @@ export class MeasurementService {
 
   updateMeasurementStatus(id: string, status: string): Promise<Measurement | null> {
     const endpoint = `${this.url}/${id}/`;
-    console.log('[MEASUREMENTS] PATCH', endpoint, { status });
     return new Promise(resolve => {
       this.http.patch<ApiMeasurement>(endpoint, { status }).subscribe({
         next: res => {
-          console.log('[MEASUREMENTS] Status updated:', res);
           const mapped = this._mapMeasurement(res);
           const updated = this._measurements().map(m => m.id === id ? mapped : m);
           this._measurements.set(updated);
@@ -324,7 +436,6 @@ export class MeasurementService {
 
   deleteMeasurement(id: string): void {
     const endpoint = `${this.url}/${id}/`;
-    console.log('[MEASUREMENTS] DELETE (soft)', endpoint);
     this.http.delete(endpoint).subscribe({
       next: () => {
         const updated = this._measurements().filter(m => m.id !== id);
@@ -344,7 +455,6 @@ export class MeasurementService {
     const acc: ApiMeasurement[] = [];
     const first = `${this.url}/trash/?page_size=500`;
     const fetchPage = (url: string): void => {
-      console.log('[MEASUREMENTS] GET trash', url);
       this.http.get<ApiPage<ApiMeasurement> | ApiMeasurement[]>(url).subscribe({
         next: res => {
           if (Array.isArray(res)) {
@@ -370,7 +480,6 @@ export class MeasurementService {
 
   restoreMeasurement(id: string): Promise<Measurement | null> {
     const endpoint = `${this.url}/${id}/restore/`;
-    console.log('[MEASUREMENTS] POST restore', endpoint);
     return new Promise(resolve => {
       this.http.post<ApiMeasurement>(endpoint, {}).subscribe({
         next: res => {

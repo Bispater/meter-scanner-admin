@@ -14,6 +14,7 @@ import { UserService } from '../../core/services/user.service';
 import { MeasurementService } from '../../core/services/measurement.service';
 import { CycleService } from '../../core/services/cycle.service';
 import { OrganizationService } from '../../core/services/organization.service';
+import { VersionCheckService } from '../../core/services/version-check.service';
 
 @Component({
   selector: 'app-main-layout',
@@ -57,12 +58,28 @@ import { OrganizationService } from '../../core/services/organization.service';
 
         <!-- Bottom -->
         <div class="p-4 border-t border-slate-700">
-          <div class="text-xs text-slate-500 text-center">Metscan v1.0 — MVP</div>
+          <div class="text-xs text-slate-500 text-center">
+            Metscan v1.0 — MVP
+            <span class="block text-[10px] text-slate-600 mt-0.5">build {{ versionCheck.currentVersion }}</span>
+          </div>
         </div>
       </aside>
 
       <!-- Main Content -->
       <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Aviso de nueva versión desplegada -->
+        @if (versionCheck.updateAvailable()) {
+          <div class="flex items-center justify-center gap-2 bg-cyan-500/15 border-b border-cyan-500/30 px-4 py-2 shrink-0">
+            <mat-icon class="text-cyan-300" style="font-size:16px;width:16px;height:16px;">system_update_alt</mat-icon>
+            <span class="text-cyan-200 text-xs font-semibold">Hay una nueva versión disponible.</span>
+            <button
+              class="text-xs font-bold text-cyan-300 underline underline-offset-2 cursor-pointer bg-transparent border-0 hover:text-cyan-100"
+              (click)="versionCheck.reloadApp()"
+            >
+              Haz clic aquí para actualizar
+            </button>
+          </div>
+        }
         <!-- Demo mode banner -->
         @if (demoMode.isActive()) {
           <div class="flex items-center justify-center gap-2 bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 shrink-0">
@@ -129,15 +146,19 @@ export class MainLayoutComponent implements OnInit {
   private readonly measurementService = inject(MeasurementService);
   private readonly cycleService = inject(CycleService);
   private readonly organizationService = inject(OrganizationService);
+  readonly versionCheck = inject(VersionCheckService);
 
-  /** Overlay until each service’s first list load completes (not on every refetch after CRUD). */
+  /**
+   * Overlay until each service’s first list load completes (not on every refetch after CRUD).
+   * Las mediciones NO bloquean el ingreso: se cargan bajo demanda cuando el usuario
+   * aplica un filtro en la pantalla de Mediciones (el Dashboard usa /summary/, liviano).
+   */
   readonly dataLoading = computed(() => {
     const orgPending =
       this.authService.isSuperAdmin() && this.organizationService.initialLoadPending();
     return (
       this.buildingService.initialLoadPending() ||
       this.userService.initialLoadPending() ||
-      this.measurementService.initialLoadPending() ||
       this.cycleService.initialLoadPending() ||
       orgPending
     );
@@ -146,11 +167,15 @@ export class MainLayoutComponent implements OnInit {
   ngOnInit(): void {
     this.buildingService.loadAll();
     this.userService.loadAll();
-    this.measurementService.loadAll();
+    // No se precargan filas de mediciones: el Dashboard solo necesita los agregados
+    // del endpoint de resumen; la tabla de Mediciones carga cuando el usuario filtra.
+    this.measurementService.loadDashboardSummary();
     this.cycleService.loadAll();
     if (this.authService.isSuperAdmin()) {
       this.organizationService.loadAll();
     }
+    // Aviso de despliegues nuevos sin que la clienta tenga que recargar a mano.
+    this.versionCheck.start();
   }
 
   readonly navItems = () => {

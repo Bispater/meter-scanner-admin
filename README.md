@@ -28,13 +28,15 @@ ng generate --help
 
 ## Building
 
-To build the project run:
+Development build:
 
 ```bash
 ng build
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+**Producción: ver [DEPLOY.md](DEPLOY.md).** Resumen: compilar siempre con
+`npm run build:prod` (estampa la versión para el aviso de actualización en la app)
+y desplegar con `npx firebase deploy --only hosting`.
 
 ## Running unit tests
 

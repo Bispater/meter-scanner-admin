@@ -33,7 +33,7 @@ Chart.register(...registerables);
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
         @for (card of summaryCards(); track card.title) {
           @if (card.link) {
-            <a [routerLink]="card.link"
+            <a [routerLink]="card.link" [queryParams]="card.queryParams"
                class="block bg-slate-800 rounded-xl border border-slate-700 p-6 hover:border-amber-500/50 hover:bg-slate-800/80 transition-colors cursor-pointer no-underline">
               <div class="flex items-start justify-between">
                 <div>
@@ -139,10 +139,10 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private barChart?: Chart;
   private donutChart?: Chart;
 
+  // El Dashboard usa el endpoint de resumen (todo el histórico) para no depender del
+  // mes acotado que carga la tabla de mediciones.
   readonly recentMeasurements = computed(() =>
-    [...this.measurementService.measurements()]
-      .sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime())
-      .slice(0, 5),
+    this.measurementService.dashboardSummary()?.recent ?? [],
   );
 
   readonly statusLegend = [
@@ -152,29 +152,23 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   ];
 
   constructor() {
-    // Re-draw charts whenever measurements signal changes
+    // Re-draw charts whenever the dashboard summary changes
     effect(() => {
-      const measurements = this.measurementService.measurements();
-      if (measurements.length > 0 && this.barChart && this.donutChart) {
+      const summary = this.measurementService.dashboardSummary();
+      if (summary && this.barChart && this.donutChart) {
         this._updateCharts();
       }
     });
   }
 
   readonly summaryCards = computed(() => {
-    const all = this.measurementService.measurements();
-    const pending = all.filter(m => m.status === 'pending_review').length;
-    const verified = all.filter(m => m.status === 'verified').length;
-    const rejected = all.filter(m => m.status === 'rejected').length;
+    const summary = this.measurementService.dashboardSummary();
+    const counts = summary?.statusCounts ?? { verified: 0, pending_review: 0, rejected: 0 };
+    const pending = counts.pending_review;
+    const verified = counts.verified;
+    const rejected = counts.rejected;
     const total = pending + verified + rejected;
-
-    // Validadas en últimos 30 días (usa validated_at si existe; si no, captured_at).
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const verifiedRecent = all.filter(m => {
-      if (m.status !== 'verified') return false;
-      const ts = m.validated_at ? new Date(m.validated_at).getTime() : new Date(m.captured_at).getTime();
-      return Number.isFinite(ts) && ts >= cutoff;
-    }).length;
+    const verifiedRecent = summary?.verifiedLast30Days ?? 0;
 
     const validationRate = total > 0 ? Math.round((verified / total) * 100) : 0;
     const rejectedLabel = rejected === 1 ? '1 rechazada' : `${rejected} rechazadas`;
@@ -189,6 +183,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         iconColor: 'text-amber-400',
         valueColor: 'text-amber-400',
         link: '/app/measurements' as string | null,
+        // Aterriza en Mediciones ya filtrado a pendientes (carga solo esas filas).
+        queryParams: { status: 'pending' } as Record<string, string> | undefined,
       },
       {
         title: 'Validadas (30 días)',
@@ -199,6 +195,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         iconColor: 'text-emerald-400',
         valueColor: 'text-white',
         link: null as string | null,
+        queryParams: undefined as Record<string, string> | undefined,
       },
       {
         title: 'Tasa de validación',
@@ -209,12 +206,16 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         iconColor: 'text-cyan-400',
         valueColor: 'text-white',
         link: null as string | null,
+        queryParams: undefined as Record<string, string> | undefined,
       },
     ];
   });
 
   ngAfterViewInit(): void {
     this._initCharts();
+    // Refresca los agregados al entrar al Dashboard (el main-layout ya los cargó al
+    // iniciar sesión, pero pueden haber cambiado al volver desde otra pantalla).
+    this.measurementService.loadDashboardSummary();
     this._updateCharts();
   }
 
@@ -272,22 +273,16 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   }
 
   private _updateCharts(): void {
-    const measurements = this.measurementService.measurements();
+    const summary = this.measurementService.dashboardSummary();
 
-    // ── Bar chart: last 6 months ──
-    const now = new Date();
+    // ── Bar chart: last 6 months (desde el endpoint de resumen) ──
     const monthLabels: string[] = [];
     const monthCounts: number[] = [];
     const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      monthLabels.push(`${months[d.getMonth()]} ${d.getFullYear()}`);
-      const count = measurements.filter(m => {
-        const md = new Date(m.captured_at);
-        return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
-      }).length;
-      monthCounts.push(count);
+    for (const row of summary?.monthlyCounts ?? []) {
+      monthLabels.push(`${months[row.month - 1]} ${row.year}`);
+      monthCounts.push(row.count);
     }
 
     if (this.barChart) {
@@ -304,9 +299,10 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     }
 
     // ── Donut chart: by status ──
-    const verified = measurements.filter(m => m.status === 'verified').length;
-    const pending  = measurements.filter(m => m.status === 'pending_review').length;
-    const rejected = measurements.filter(m => m.status === 'rejected').length;
+    const counts = summary?.statusCounts ?? { verified: 0, pending_review: 0, rejected: 0 };
+    const verified = counts.verified;
+    const pending  = counts.pending_review;
+    const rejected = counts.rejected;
 
     if (this.donutChart) {
       this.donutChart.data.datasets = [{

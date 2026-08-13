@@ -317,6 +317,42 @@ export class DemoStoreService {
     return { count: sorted.length, results: sorted };
   }
 
+  /** Agregados del Dashboard en modo demo (espejo de `/measurements/summary/`). */
+  getMeasurementSummary(): any {
+    const all = this._measurements;
+    const statusCounts = {
+      verified: all.filter(m => m.status === 'verified').length,
+      pending_review: all.filter(m => m.status === 'pending_review').length,
+      rejected: all.filter(m => m.status === 'rejected').length,
+    };
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const verifiedLast30 = all.filter(
+      m => m.status === 'verified' && new Date(m.captured_at).getTime() >= cutoff,
+    ).length;
+
+    const now = new Date();
+    const monthly: { year: number; month: number; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const count = all.filter(m => {
+        const md = new Date(m.captured_at);
+        return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
+      }).length;
+      monthly.push({ year: d.getFullYear(), month: d.getMonth() + 1, count });
+    }
+
+    const recent = [...all]
+      .sort((a, b) => b.captured_at.localeCompare(a.captured_at))
+      .slice(0, 5);
+
+    return {
+      status_counts: statusCounts,
+      verified_last_30_days: verifiedLast30,
+      monthly_counts: monthly,
+      recent,
+    };
+  }
+
   deleteMeasurement(id: string): void {
     this._measurements = this._measurements.filter(m => m.id !== Number(id));
   }

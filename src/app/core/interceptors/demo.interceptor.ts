@@ -76,6 +76,11 @@ export const demoInterceptor: HttpInterceptorFn = (req, next) => {
     if (aid && method === 'DELETE') { store.deleteApartment(aid); return ok(null, 204); }
   }
 
+  // ── /measurements/summary/ (agregados del Dashboard) ──────────────────
+  if (url.includes('/measurements/summary')) {
+    return ok(store.getMeasurementSummary());
+  }
+
   // ── /measurements/{id}/ ───────────────────────────────────────────────
   if (url.includes('/measurements/')) {
     const mid = id(url, /\/measurements\/(\d+)\//);
