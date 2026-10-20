@@ -138,8 +138,7 @@ export class MeasurementService {
 
   /** Carga todo el histórico (más lento; usar solo cuando el usuario pide "todos los meses"). */
   loadAll(): void {
-    this._scope.set({ kind: 'all' });
-    this._load(`${this.url}/?page_size=500&ordering=-captured_at`);
+    this._loadScope({ kind: 'all' });
   }
 
   /**
@@ -148,22 +147,42 @@ export class MeasurementService {
    * @param month mes 1-12
    */
   loadMonth(year: number, month: number): void {
-    this._scope.set({ kind: 'month', year, month });
-    this._load(
-      `${this.url}/?captured_at__year=${year}&captured_at__month=${month}&page_size=500&ordering=-captured_at`,
-    );
+    this._loadScope({ kind: 'month', year, month });
   }
 
   /** Carga solo las mediciones asignadas al ciclo indicado (filtro en servidor). */
   loadCycle(cycleId: string): void {
-    this._scope.set({ kind: 'cycle', cycleId });
-    this._load(`${this.url}/?cycle=${encodeURIComponent(cycleId)}&page_size=500&ordering=-captured_at`);
+    this._loadScope({ kind: 'cycle', cycleId });
   }
 
   /** Carga solo las pendientes de validar, todo el histórico (filtro en servidor). */
   loadPending(): void {
-    this._scope.set({ kind: 'pending' });
-    this._load(`${this.url}/?status=pending_review&page_size=500&ordering=-captured_at`);
+    this._loadScope({ kind: 'pending' });
+  }
+
+  /**
+   * Trae las mediciones de un alcance SIN tocar el dataset de la tabla.
+   * Lo usa el diálogo de exportación para pedir un ciclo o un mes al servidor
+   * sin pisar lo que el usuario está viendo en Mediciones.
+   */
+  fetchByScope(scope: NonNullable<LoadScope>): Promise<Measurement[]> {
+    return this._fetchAllPages(this._scopeUrl(scope));
+  }
+
+  private _loadScope(scope: NonNullable<LoadScope>): void {
+    this._scope.set(scope);
+    this._load(this._scopeUrl(scope));
+  }
+
+  /** URL de la primera página para cada alcance (page_size máximo honrado por la API: 500). */
+  private _scopeUrl(scope: NonNullable<LoadScope>): string {
+    const base = `${this.url}/?page_size=500&ordering=-captured_at`;
+    switch (scope.kind) {
+      case 'all':     return base;
+      case 'month':   return `${base}&captured_at__year=${scope.year}&captured_at__month=${scope.month}`;
+      case 'cycle':   return `${base}&cycle=${encodeURIComponent(scope.cycleId)}`;
+      case 'pending': return `${base}&status=pending_review`;
+    }
   }
 
   /** Vacía el dataset y vuelve al estado inicial (nada cargado, tabla vacía). */
@@ -185,34 +204,51 @@ export class MeasurementService {
     }
   }
 
+  /** Secuencia de cargas: si el usuario cambia de alcance a mitad de una carga, la anterior se descarta. */
+  private _loadSeq = 0;
+
   private _load(first: string): void {
+    const seq = ++this._loadSeq;
     this._loading.set(true);
-    const acc: ApiMeasurement[] = [];
-    const fetchPage = (url: string): void => {
-      this.http.get<ApiPage<ApiMeasurement>>(url).subscribe({
-        next: res => {
-          acc.push(...(res.results ?? []));
-          if (res.next) {
-            // Seguir `next` solo si el total supera el page_size máximo (500).
-            fetchPage(res.next);
-            return;
-          }
-          const mapped = acc.map(m => this._mapMeasurement(m));
-          this._measurements.set(mapped);
-          this._computeSummary(mapped);
-          this._loading.set(false);
-          this._initialLoadPending.set(false);
-          this._onLoadedCallbacks.forEach(cb => cb());
-        },
-        error: err => {
-          this._loading.set(false);
-          this._initialLoadPending.set(false);
-          console.error('[MEASUREMENTS] Load error:', err);
-          this.notify.error('Error al cargar mediciones');
-        },
-      });
-    };
-    fetchPage(first);
+    this._fetchAllPages(first).then(
+      mapped => {
+        if (seq !== this._loadSeq) return; // llegó una carga más nueva; esta ya no interesa
+        this._measurements.set(mapped);
+        this._computeSummary(mapped);
+        this._loading.set(false);
+        this._initialLoadPending.set(false);
+        this._onLoadedCallbacks.forEach(cb => cb());
+      },
+      err => {
+        if (seq !== this._loadSeq) return;
+        this._loading.set(false);
+        this._initialLoadPending.set(false);
+        console.error('[MEASUREMENTS] Load error:', err);
+        this.notify.error('Error al cargar mediciones');
+      },
+    );
+  }
+
+  /** Descarga todas las páginas a partir de `first` y devuelve las filas mapeadas (sin efectos sobre el estado). */
+  private _fetchAllPages(first: string): Promise<Measurement[]> {
+    return new Promise((resolve, reject) => {
+      const acc: ApiMeasurement[] = [];
+      const fetchPage = (url: string): void => {
+        this.http.get<ApiPage<ApiMeasurement>>(url).subscribe({
+          next: res => {
+            acc.push(...(res.results ?? []));
+            if (res.next) {
+              // Seguir `next` solo si el total supera el page_size máximo (500).
+              fetchPage(res.next);
+              return;
+            }
+            resolve(acc.map(m => this._mapMeasurement(m)));
+          },
+          error: reject,
+        });
+      };
+      fetchPage(first);
+    });
   }
 
   /**
@@ -257,8 +293,10 @@ export class MeasurementService {
       result = result.filter(m => m.cycle_id != null && String(m.cycle_id) === want);
     }
     if (filters.building) {
+      // Coincidencia exacta: el selector ofrece nombres del catálogo, y un
+      // «includes» mezclaría «Edificio Norte» con «Edificio Norte II».
       const q = filters.building.toLowerCase();
-      result = result.filter(m => m.building_name.toLowerCase().includes(q));
+      result = result.filter(m => m.building_name.toLowerCase() === q);
     }
     if (filters.tower) {
       result = result.filter(m => m.tower === filters.tower);

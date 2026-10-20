@@ -16,7 +16,12 @@ Producción en Firebase Hosting; la API vive en el repo `meter-scanner-api`.
 ## Convenciones del proyecto
 
 - Comentarios y textos de UI en español.
-- La tabla de Mediciones arranca vacía: los datos se cargan por alcance (mes+año, ciclo o
-  pendientes) desde el servidor — no volver a cargar el histórico completo por defecto.
+- La tabla de Mediciones carga por alcance (un mes, un ciclo o pendientes) desde el servidor.
+  Al entrar se carga solo el mes en curso; el histórico completo únicamente si el usuario
+  elige «Todo el histórico» en el selector de período — no volver a cargarlo por defecto.
+- La exportación (planilla XLSX/CSV y ZIP de fotos) vive en un diálogo propio que pide los
+  datos al servidor por ciclo o por mes (`MeasurementService.fetchByScope`), sin depender de
+  lo que muestra la tabla. El formato de la planilla (Depto-Torre + Lectura, orden torre/depto)
+  está en `shared/utils/measurement-export.util.ts`; no cambiarlo sin confirmar con la clienta.
 - El Dashboard usa el endpoint liviano `/measurements/summary/`, no descarga filas.
 - Sin auto-refresh por defecto; es opt-in desde el menú «Auto» en Mediciones.
